@@ -4,9 +4,10 @@ import userRouter from './user.js';
 import { optionalAuth } from '../middleware/authMiddleware.js';
 import analyticsRouter from './analytics.js';
 import transactionRouter from './transaction.js';
+import {userRateLimiter} from "../middleware/rateLimiter.js";
 
 router.use("/users", userRouter);
-router.use("/analytics", optionalAuth, analyticsRouter);
-router.use("/transactions", optionalAuth, transactionRouter);
+router.use("/analytics", optionalAuth, userRateLimiter, analyticsRouter);
+router.use("/transactions", optionalAuth, userRateLimiter,transactionRouter);
 
 export default router;

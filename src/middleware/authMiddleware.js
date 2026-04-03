@@ -24,7 +24,6 @@ const verifyAuthStatus = async (req, res, next) => {
 
         // Add user info to request object
         req.user = {
-            gmail: decoded.userInfo.userEmail,
             userId: decoded.sub,
             role: decoded.userInfo.role,
         };

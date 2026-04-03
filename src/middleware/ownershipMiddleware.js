@@ -11,8 +11,11 @@ export const checkOwnerShip = ({ model, fieldToCheck }) => {
 
         if (!transactionInfo) return next(createHttpError(404, "Transaction not found"));
 
+        const recordOwnerId = transactionInfo[fieldToCheck]?.toString();
+        const authenticatedUserId = userId?.toString();
 
-        if (transactionInfo[fieldToCheck] !== userId) {
+        const isOwner = recordOwnerId === authenticatedUserId;
+        if (!isOwner) {
             return next(createHttpError(403, "You're unauthorized to perform this action"));
         }
 

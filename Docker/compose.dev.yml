@@ -1,0 +1,40 @@
+services:
+  app:
+    build:
+      context: ../
+      dockerfile: ./Docker/Dockerfile.dev
+    ports:
+      - "3000:3000"
+    env_file:
+      - ../.env.development
+    depends_on:
+      - mongo
+    volumes:
+      - ../:/app
+      - /app/node_modules
+    networks:
+      - app-network
+    develop:
+      watch:
+        - action: sync
+          path: ../
+          target: /app
+          ignore:
+            - node_modules/
+        - action: rebuild
+          path: ../package.json
+
+  mongo:
+    image: mongo:latest
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    networks:
+      - app-network
+
+networks:
+  app-network:
+
+volumes:
+  mongo-data:

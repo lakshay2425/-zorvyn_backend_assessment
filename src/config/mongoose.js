@@ -7,6 +7,7 @@ const connectOptions = {
   maxIdleTimeMS: 10000, 
 };
 
+let isConnected = false; 
 
 export async function connectToDatabase(){
   if (isConnected) {
@@ -14,16 +15,12 @@ export async function connectToDatabase(){
   }
 
   try {
-    if(!dbURI){
-      console.log("MongoDB Connection URL is required")
-    }else{
       await mongoose.connect(dbURI, connectOptions);
       console.log('Mongoose connected');
       isConnected = true; // Set connection status
-    }
   } catch (error) {
     console.error('Mongoose connection error:', error.message);
-    throw err; // Propagate the error
+    throw error; 
   }
 }
 

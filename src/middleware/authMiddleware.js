@@ -2,7 +2,6 @@ import { config } from "../config/config.js"
 import createHttpError from 'http-errors'
 import jwt from "jsonwebtoken";
 import { returnResponse } from "../utilis/returnResponse.js";
-
 const jwtSecret = config.get("JWT_SECRET");
 const environment = config.get("NODE_ENVIRONMENT");
 

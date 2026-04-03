@@ -1,4 +1,5 @@
 import { balanceCache } from "../controllers/transactions.js";
+import createHttpError from "http-errors";
 
 export const checkResourceLock = (req, res, next) => {
     const userId = req.user.userId;

@@ -39,10 +39,14 @@ export const userSignup = asyncHandler(async (req, res, next) => {
     }
     const secret = config.get("JWT_SECRET");
     const signupInfo = await signupUser(inputValidation.data, { dbOperation, serviceOperation, bcrypt, userModel, jwt, secret })
-    res.cookie('token', signupInfo.token, cookieOption);
-    res.status(200).json({
-        message: "User signed up successfully",
-    })
+    if(signupInfo.success === false) {
+        return next(createHttpError(signupInfo.status, signupInfo.message));
+    }else{
+        res.cookie('token', signupInfo.token, cookieOption);
+        res.status(200).json({
+            message: "User signed up successfully",
+        })
+    }
 })
 
 export const userLogout = async (req, res) => {

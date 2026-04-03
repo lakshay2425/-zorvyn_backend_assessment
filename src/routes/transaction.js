@@ -6,8 +6,8 @@ import { transactionModel } from '../schema/transaction.js';
 import { checkResourceLock } from '../middleware/checkResourceLock.js';
 import { ACTIONS } from '../constants/permissions.js';
 import { checkUserPermission } from '../middleware/checkUserPermission.js';
-const router = express.Router(); checkUserPermission(ACTIONS.READ_TRANSACTION)
-,
+const router = express.Router(); 
+
 router.get("/", checkUserPermission(ACTIONS.READ_TRANSACTION) ,getUserTransactions);
 router.post("/", checkUserPermission(ACTIONS.CREATE_TRANSACTION), checkResourceLock, createTransaction);
 router.patch("/:transactionId", checkUserPermission(ACTIONS.UPDATE_TRANSACTION), validateObjectId({paramName: "transactionId", type: "params"}), checkResourceLock, checkOwnerShip({model: transactionModel, fieldToCheck: "userId"}), updateTransaction);

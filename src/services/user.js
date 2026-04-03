@@ -50,17 +50,10 @@ export const signupUser = async (inputValidation, dependenices) => {
     )
 
     if (userData) {
-        const token = await serviceOperation(
-            () => createJwtToken(userData._id, userData.role, {
-                secret,
-                jwt,
-            }),
-            "Failed to create JWT authentication token"
-        );
-
         return {
-            success: true,
-            token,
+            success: false,
+            status: 409,
+            message: "An account with this email already exists, Please login to your account or use a different email to signup",
         }
     }
 
@@ -91,7 +84,7 @@ export const signupUser = async (inputValidation, dependenices) => {
 
     return {
         success: true,
-        token,
+        token: token.token,
     }
 }
 

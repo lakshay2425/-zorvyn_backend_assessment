@@ -12,10 +12,12 @@
   "license": "ISC",
   "type": "module",
   "dependencies": {
+    "bcrypt": "^6.0.0",
     "express": "^5.2.1",
     "http-errors": "^2.0.1",
     "jsonwebtoken": "^9.0.3",
-    "mongoose.js": "^0.0.1-security",
+    "mongoose": "^9.3.3",
+    "uuid": "^13.0.0",
     "zod": "^4.3.6"
   }
 }

@@ -7,10 +7,19 @@ const userSchema = new Schema({
         required: true,
         unique: true
     },
-    email: {
+    name: {
+        type: String,
+        required: true
+    },
+        emailOriginal: {
         type: String,
         required: true,
-        unique: true
+    },
+    emailLowercase: {
+        type: String,
+        required: true,
+        unique: true,
+        lowercase: true
     },
     password: {
         type: String,
@@ -19,7 +28,8 @@ const userSchema = new Schema({
     role: {
         type: String,
         required: true,
-        enum: ["viewer", "analyst", "admin"]
+        enum: ["viewer", "analyst", "admin"],
+        default: "viewer"
     },
     isActive: {
         type: Boolean,

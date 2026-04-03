@@ -19,7 +19,7 @@ export const verifyLogin = async (inputValidation, dependenices) => {
         };
     }
     const createToken = await serviceOperation(
-        () => createJwtToken(userData._id, userData.role, inputValidation.email.original, {
+        () => createJwtToken(userData._id, userData.role, {
             secret,
             jwt,
         }),
@@ -82,7 +82,7 @@ export const signupUser = async (inputValidation, dependenices) => {
         'Failed to create user account'
     )
     const token = await serviceOperation(
-        () => createJwtToken(newUser._id, inputValidation.email.original, newUser.role, {
+        () => createJwtToken(newUser._id, newUser.role, {
             secret,
             jwt
         }),
@@ -97,7 +97,7 @@ export const signupUser = async (inputValidation, dependenices) => {
 
 
 
-const createJwtToken = async (id, userEmail, role, dependenices) => {
+const createJwtToken = async (id, role, dependenices) => {
     const { secret, jwt } = dependenices;
     let payload = {
         sub: id,

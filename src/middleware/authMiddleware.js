@@ -24,7 +24,9 @@ const verifyAuthStatus = async (req, res, next) => {
 
         // Add user info to request object
         req.user = {
-            gmail: decoded.userInfo.userEmail
+            gmail: decoded.userInfo.userEmail,
+            userId: decoded.sub,
+            role: decoded.userInfo.role,
         };
 
         next();
@@ -44,7 +46,8 @@ const verifyAuthStatus = async (req, res, next) => {
 export const optionalAuth = async (req, res, next) => {
     if (environment === "development" && config.get("BYPASS_AUTH") === 'true') {
         req.user = {
-            gmail: config.get("TEST_USER_EMAIL")
+            role: "admin",
+            userId: "69cfaf4cd681a6a77b076222"
         }
         return next();
     }

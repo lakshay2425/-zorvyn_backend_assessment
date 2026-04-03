@@ -51,7 +51,7 @@ export const signupUser = async (inputValidation, dependenices) => {
 
     if (userData) {
         const token = await serviceOperation(
-            () => createJwtToken(userData._id, email, userData.role, {
+            () => createJwtToken(userData._id, userData.role, {
                 secret,
                 jwt,
             }),
@@ -101,7 +101,7 @@ const createJwtToken = async (id, role, dependenices) => {
     const { secret, jwt } = dependenices;
     let payload = {
         sub: id,
-        userInfo: { userEmail, role }
+        userInfo: { role }
     }
     try {
         const token = jwt.sign(payload, secret, {

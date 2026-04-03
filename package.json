@@ -4,7 +4,7 @@
   "description": "",
   "main": "server.js",
   "scripts": {
-    "dev" : "node --watch --env-file=.env.development server.js",
+    "dev": "node --watch --env-file=.env.development server.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -13,6 +13,9 @@
   "type": "module",
   "dependencies": {
     "express": "^5.2.1",
-    "mongoose.js": "^0.0.1-security"
+    "http-errors": "^2.0.1",
+    "jsonwebtoken": "^9.0.3",
+    "mongoose.js": "^0.0.1-security",
+    "zod": "^4.3.6"
   }
 }

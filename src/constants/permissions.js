@@ -4,6 +4,7 @@ export const ACTIONS = {
     UPDATE_TRANSACTION: "update_transaction",
     DELETE_TRANSACTION: "delete_transaction",
     VIEW_DASHBOARD: "view_dashboard",
+    CREATE_ACCOUNT: "create_account",
 };
 
 export const ROLE_PERMISSIONS = {
@@ -13,6 +14,7 @@ export const ROLE_PERMISSIONS = {
         ACTIONS.UPDATE_TRANSACTION,
         ACTIONS.DELETE_TRANSACTION,
         ACTIONS.VIEW_DASHBOARD,
+        ACTIONS.CREATE_ACCOUNT,
     ],
     analyst: [
         ACTIONS.READ_TRANSACTION, 

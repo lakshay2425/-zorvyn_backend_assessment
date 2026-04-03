@@ -1,5 +1,3 @@
-import {balanceCache} from "../controllers/transactions.js";
-
 export const asyncHandler =  (fn) => {
     return ((req, res, next) => {
         Promise.resolve(fn(req, res, next)).catch(next);
@@ -35,7 +33,7 @@ export const serviceOperation = async (operation, errorMessage) => {
 };
 
 //Release user lock
-export const withUserLock = async (userId, operation) => {
+export const withUserLock = async (userId, balanceCache,operation) => {
     try {
         return await operation();
     } finally {

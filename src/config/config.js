@@ -4,7 +4,8 @@ const _config = {
     dbURI: process.env.DB_URI || 'mongodb://localhost:27017/base',
     JWT_SECRET: process.env.JWT_SECRET || "your-default-secret-key",
     BYPASS_AUTH: process.env.BYPASS_AUTH || "false",
-    TEST_USER_EMAIL: process.env.TEST_USER_EMAIL || "your-test-email"
+    TEST_USER_EMAIL: process.env.TEST_USER_EMAIL || "your-test-email",
+    DOMAIN: process.env.DOMAIN || "localhost"
 }
 
 

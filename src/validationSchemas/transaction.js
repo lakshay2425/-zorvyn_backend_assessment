@@ -25,3 +25,12 @@ export const updateTransactionSchema = transactionSchema.partial().omit({
   type: true, 
   date: true 
 });
+
+export const getTransactionsQuerySchema = z.object({
+    type: z.enum(["income", "expense"]).optional(),
+    category: z.string().trim().min(1).optional()
+});
+
+export const idempotencyHeaderSchema = z.object({
+    idempotencyKey: z.string().trim().min(1)
+});

@@ -17,7 +17,6 @@ export const validateObjectId = ({paramName, type}) => {
         if(!result.success) {
             return res.status(400).json({error: `Invalid Input`});
         }
-        console.log("Validated ObjectId:", result.data);
         req.transactionId = result.data;
         next();
     } 

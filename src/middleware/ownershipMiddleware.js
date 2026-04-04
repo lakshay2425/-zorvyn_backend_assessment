@@ -8,7 +8,7 @@ export const checkOwnerShip = ({ model, fieldToCheck }) => {
         const userId = req.user?.userId;
 
         const transactionInfo = await dbOperation(() => model.findById(transactionId), "Failed to retrive transaction record");
-
+        
         if (!transactionInfo) return next(createHttpError(404, "Transaction not found"));
 
         const recordOwnerId = transactionInfo[fieldToCheck]?.toString();

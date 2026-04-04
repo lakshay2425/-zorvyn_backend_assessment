@@ -114,6 +114,13 @@ When a duplicate key is detected, the response includes the header **`Idempotenc
 
 For write operations (create, update, delete), a **`withUserLock`** wrapper sets the user's balance cache status to `processing`, blocking any concurrent write from the same user (checked by `checkResourceLock` middleware) until the operation completes. This prevents race conditions such as double-spending on expense transactions.
 
+### 🔄 State-Aware Idempotency Logic
+
+A critical architectural decision was made to implement **Success-Only Idempotency**. Unlike a standard request cache, this system distinguishes between "Business Logic Failures" and "Successful State Changes":
+
+* **Failure Handling:** If a request fails due to `Insufficient Funds` or `Validation Errors`, the `X-Idempotency-Key` is **not** cached. 
+* **Success Persistence:** Once a transaction is successfully committed to the database, the response is cached. Subsequent retries with the same key will return the cached data with an `Idempotency-Replay: true` header, preventing double-spending or duplicate record creation.
+
 ### Write-Through Balance Caching
 
 An in-memory `balanceCache` (`{ [userId]: { balance, status } }`) is maintained as a **write-through cache**:

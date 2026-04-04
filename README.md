@@ -238,7 +238,7 @@ X-Idempotency-Key: <uuid>   (required)
 {
   "amount": 1500.00,
   "type": "income | expense",
-  "date": "2024-01-15T00:00:00.000Z",
+  "date": "2024-01-15",
   "category": "Salary",
   "description": "Monthly salary deposit"
 }
@@ -282,8 +282,8 @@ Only `amount`, `category`, and `description` are mutable. `type` and `date` are 
       "count": 12
     },
     "categoryBreakdown": [
-      { "_id": "Salary", "total": 5000 },
-      { "_id": "Food", "total": 800 }
+      { "_id": "Salary", "netBalance": 5000 },
+      { "_id": "Food", "netBalance": -800 }
     ]
   }
 }

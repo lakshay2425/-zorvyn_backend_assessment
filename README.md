@@ -1,4 +1,4 @@
-# Zorvyn FinTech Backend Assessment
+# FinTech Core Concurrency API
 
 A production-minded **Node.js/Express** REST API for financial transaction management, built with a focus on data integrity, concurrency safety, and role-aware security.
 
@@ -315,7 +315,7 @@ Only `amount`, `category`, and `description` are mutable. `type` and `date` are 
 ```bash
 # 1. Clone the repository
 git clone <repository-url>
-cd zorvyn_backend_assessment
+cd <folder_name>
 
 # 2. Install dependencies
 npm install
@@ -368,3 +368,11 @@ BYPASS_AUTH=    # Set to 'true' to skip JWT verification in development
 ```
 
 > **Security note:** `BYPASS_AUTH` is only respected when `NODE_ENV=development`. It should never be set to `true` in production.
+
+---
+
+## Assignment Reflection
+
+I completed this assignment in 24 hours and submitted it more than 48 hours before the deadline so I could travel properly and not miss the opportunity.
+While traveling, I found out that the company was fake and not genuine.
+Even though the company was fake, I learned a lot from this assignment about idempotency, race conditions, and locks to prevent race conditions in depth.

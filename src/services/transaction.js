@@ -1,11 +1,10 @@
 export const getUserTransactionsService = async (input, dependencies) => {
-    const { userId, isAdmin, type, category } = input;
+    const { userId, type, category } = input;
     const { dbOperation, transactionModel } = dependencies;
-    const matchQuery = { deletedAt: null };
+    const matchQuery = { deletedAt: null, userId };
+
     if (type) matchQuery.type = type;
     if (category) matchQuery.category = category;
-    
-    if (!isAdmin) matchQuery.userId = userId;
 
     const allTransactions = await dbOperation(
         () => transactionModel.find(matchQuery).sort({ date: -1 }).lean(),
@@ -20,7 +19,7 @@ export const getUserTransactionsService = async (input, dependencies) => {
 };
 
 export const createTransactionService = async (input, dependencies) => {
-    const { userId, amount, type, date, category, description } = input;
+    const { userId, amount, type, date, category, description, idempotencyKey } = input;
     const { dbOperation, withUserLock, transactionModel, mongoose, balanceCache, updateCacheBalance } = dependencies;
 
     if (type === "expense") {
@@ -34,6 +33,7 @@ export const createTransactionService = async (input, dependencies) => {
                 };
             }
             balanceCache[userId].status = "processing";
+            balanceCache[userId].lastUpdatedAt = Date.now();
         } else {
             const userBalance = await transactionModel.aggregate([
                 { $match: { userId: new mongoose.Types.ObjectId(userId), deletedAt: null } },
@@ -43,28 +43,65 @@ export const createTransactionService = async (input, dependencies) => {
             const expense = userBalance.find(b => b._id === "expense")?.totalAmount ?? 0;
             const currentBalance = income - expense;
             if (currentBalance < amount) {
-                balanceCache[userId] = { balance: currentBalance, status: "idle" };
+                balanceCache[userId] = { balance: currentBalance, status: "idle", lastUpdatedAt: Date.now() };
                 return {
                     success: false,
                     message: "Insufficient balance for this expense transaction",
                     errorType: 400
                 };
             }
-            balanceCache[userId] = { balance: currentBalance, status: "processing" };
+            balanceCache[userId] = { balance: currentBalance, status: "processing", lastUpdatedAt: Date.now() };
         }
     }
 
     let transaction;
-    await withUserLock(userId, balanceCache, async () => {
-        transaction = await dbOperation(
-            () => transactionModel.create({ amount, type, date, category, description, userId }),
-            "Failed to record the transaction"
-        );
-        await updateCacheBalance(userId, amount, type);
-    });
+    try {
+        await withUserLock(userId, balanceCache, async () => {
+            try {
+                transaction = await transactionModel.create({
+                    amount,
+                    type,
+                    date,
+                    category,
+                    description,
+                    userId,
+                    idempotencyKey
+                });
+            } catch (error) {
+                if (error?.code === 11000) {
+                    const existing = await transactionModel.findOne({ idempotencyKey }).lean();
+                    if (existing) {
+                        const err = new Error("Idempotency key already processed");
+                        err.isIdempotencyReplay = true;
+                        err.existingTransaction = existing;
+                        throw err;
+                    }
+                }
+                console.error("DB Error: Failed to record the transaction", error.message);
+                const wrapped = new Error("Failed to record the transaction");
+                wrapped.statusCode = 500;
+                throw wrapped;
+            }
+            await updateCacheBalance(userId, amount, type);
+        });
+    } catch (error) {
+        if (error?.isIdempotencyReplay) {
+            return {
+                success: true,
+                replay: true,
+                message: "This transaction has already been processed",
+                data: {
+                    transactionID: error.existingTransaction._id,
+                    transactionData: error.existingTransaction
+                }
+            };
+        }
+        throw error;
+    }
 
     return {
         success: true,
+        replay: false,
         message: "Transaction created successfully",
         data: { transactionID: transaction._id, transactionData: transaction }
     };
@@ -74,8 +111,9 @@ export const updateTransactionService = async (input, dependencies) => {
     const { userId, transaction, payload } = input;
     const { dbOperation, withUserLock, transactionModel, balanceCache, updateCacheBalance } = dependencies;
 
-    balanceCache[userId] ||= { balance: 0, status: "idle" };
+    balanceCache[userId] ||= { balance: 0, status: "idle", lastUpdatedAt: Date.now() };
     balanceCache[userId].status = "processing";
+    balanceCache[userId].lastUpdatedAt = Date.now();
 
     const { _id: transactionId, amount, type } = transaction;
     const allowedFields = ["amount", "category", "description"];

@@ -2,38 +2,20 @@ import pkg from "mongoose"
 const { Schema, model, models } = pkg
 
 const userSchema = new Schema({
-    userName: {
-        type: String,
-        required: true,
-        unique: true
+    _id: {
+        type: Schema.Types.ObjectId,
+        required: true
     },
     name: {
-        type: String,
-        required: true
-    },
-        emailOriginal: {
-        type: String,
-        required: true,
-    },
-    emailLowercase: {
-        type: String,
-        required: true,
-        unique: true,
-        lowercase: true
-    },
-    password: {
-        type: String,
-        required: true
+        type: String
     },
     role: {
         type: String,
-        required: true,
-        enum: ["viewer", "analyst", "admin"],
-        default: "viewer"
+        default: "user"
     },
-    isActive: {
-        type: Boolean,
-        default: true
+    plan: {
+        type: String,
+        default: "free"
     }
 }, { timestamps: true })
 

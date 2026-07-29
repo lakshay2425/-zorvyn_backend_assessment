@@ -288,7 +288,7 @@ BYPASS_AUTH=    # Set to 'true' to skip JWT verification in development
 
 > **Security note:** `BYPASS_AUTH` is only respected when `NODE_ENV=development`. It should never be set to `true` in production.
 
-> **Auth note (v1):** JWT verification uses RS256 with a public key fetched from the external auth service (placeholder in `src/middleware/authMiddleware.js`). There is no local `JWT_SECRET` in this service anymore.
+> **Auth note (v1):** JWT verification uses RS256 against the auth service JWKS endpoint via `jwks-rsa` (`src/utilis/jwt.js`). There is no local `JWT_SECRET` in this service anymore.
 
 ---
 

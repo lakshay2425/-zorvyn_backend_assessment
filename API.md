@@ -13,9 +13,11 @@ Authentication is delegated to an external auth service.
 | Detail | Value |
 |---|---|
 | Algorithm | RS256 |
+| Issuer | `auth-service` |
 | Transport | HttpOnly cookie named `token` |
 | Claim used | `sub` — auth service user ID (also used as this service's shadow `User._id`) |
-| Public key | Fetched from the auth service and cached in memory (placeholder in code) |
+| Extra claim | `userInfo.userEmail` — attached to `req.user.email` after verification |
+| Public key | Fetched from auth JWKS (`/.well-known/jwks.json`) via `jwks-rsa` (cached + rate-limited) |
 
 ### Development bypass
 

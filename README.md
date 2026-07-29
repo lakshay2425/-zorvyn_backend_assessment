@@ -31,7 +31,7 @@ It has been evolved into **Personal Income & Expense Tracker v1** with these int
 | Area | Assessment (original) | Tracker v1 (current) |
 |---|---|---|
 | Product scope | Multi-role financial API | Single-owner personal income/expense tracker |
-| Auth | Local login/signup issuing HS256 JWTs | External auth service; this API verifies **RS256** JWTs from a cookie and caches the public key in memory |
+| Auth | Local login/signup issuing HS256 JWTs | External auth service; this API verifies **RS256** JWTs from a cookie using JWKS (`jwks-rsa`, issuer `auth-service`) |
 | Users | Full credential user documents | Shadow `users` collection (`_id` = auth `sub`, plus `name`, `role`, `plan`) |
 | RBAC | Enforced via `checkUserPermission` | Removed — every authenticated user only accesses their own data |
 | Idempotency | In-memory `proccessedTransactionKeys` map | Persisted on each transaction (`idempotencyKey` + unique MongoDB index) |

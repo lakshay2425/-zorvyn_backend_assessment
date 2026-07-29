@@ -2,7 +2,8 @@
 
 A production-minded **Node.js/Express** REST API for personal income and expense tracking, built with a focus on data integrity and concurrency safety.
 
-> **Current API reference for frontend work:** see [`API.md`](./API.md).
+> **Current API reference for frontend work:** see [`API.md`](./API.md).  
+> **Frontend Labs (idempotency + concurrency demos):** see [`FRONTEND_LABS.md`](./FRONTEND_LABS.md).
 
 ---
 

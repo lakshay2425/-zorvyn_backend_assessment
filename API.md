@@ -1,80 +1,256 @@
-# API Documentation — Personal Income & Expense Tracker v1
+# Personal Income & Expense Tracker — API Contract (v1)
 
-Base URL: `/api`
+Use this document to build and integrate a React frontend against the evolved backend.
 
-All protected routes expect an authenticated JWT in the `token` HttpOnly cookie (cookie name may change later). Requests must be made with credentials included (`credentials: 'include'` for `fetch`, or `withCredentials: true` for axios).
+**Base URL:** `{API_ORIGIN}/api`  
+**Health (no `/api` prefix):** `{API_ORIGIN}/health`
+
+All authenticated requests must send cookies:
+
+```js
+fetch(url, { credentials: "include" })
+// axios: withCredentials: true
+```
 
 ---
 
-## Authentication
+## Table of contents
 
-Authentication is delegated to an external auth service.
+1. [Auth model](#1-auth-model)
+2. [Shared response shapes](#2-shared-response-shapes)
+3. [Shared status codes / cross-cutting errors](#3-shared-status-codes--cross-cutting-errors)
+4. [Frontend onboarding sequence](#4-frontend-onboarding-sequence)
+5. [Health](#5-health)
+6. [Users](#6-users)
+7. [Transactions](#7-transactions)
+8. [Analytics](#8-analytics)
+9. [Frontend handling checklist](#9-frontend-handling-checklist)
+
+---
+
+## 1. Auth model
+
+Authentication is handled by an **external auth service**. This backend only verifies the JWT.
 
 | Detail | Value |
 |---|---|
-| Algorithm | RS256 |
+| Cookie name | `token` (HttpOnly) |
+| Access in backend | `req.cookies.token` |
+| Algorithm | `RS256` |
 | Issuer | `auth-service` |
-| Transport | HttpOnly cookie named `token` |
-| Claim used | `sub` — auth service user ID (also used as this service's shadow `User._id`) |
-| Extra claim | `userInfo.userEmail` — attached to `req.user.email` after verification |
-| Public key | Fetched from auth JWKS (`/.well-known/jwks.json`) via `jwks-rsa` (cached + rate-limited) |
+| JWKS | `https://authentication.lakshaymahajan.com/.well-known/jwks.json` |
+| Identity claim | `sub` — MongoDB ObjectId string |
+| Extra claim | `userInfo.userEmail` |
+| Mapped to request | `req.user = { userId: sub, email: userInfo.userEmail }` |
 
-### Development bypass
+### Rules for frontend
 
-When `NODE_ENV=development` and `BYPASS_AUTH=true`, JWT verification is skipped and a hardcoded `userId` is injected. Never enable this in production.
+- Login / logout / password flows happen on the **auth service**, not this API.
+- After login, the auth service sets the `token` cookie.
+- This API uses `sub` as the shadow user `_id` and as `Transaction.userId`.
+- There are **no login, signup, or logout routes** on this backend.
 
-### Common auth errors
+### Auth errors (apply to every protected route)
 
-| Status | Message |
-|---|---|
-| `400` | No Token is provided |
-| `401` | Token has expired, please login again |
-| `401` | Invalid token, please login again |
+Protected routes: `/api/users/*`, `/api/transactions/*`, `/api/analytics`.
 
----
+#### Missing cookie
 
-## Common response shapes
-
-### Success
+**Status:** `400`
 
 ```json
 {
   "success": true,
-  "message": "string",
-  "...additionalFields": {}
+  "message": "No Token is provided"
 }
 ```
 
-### Error
+> Note: status is `400`, but body still has `"success": true` (current backend behaviour). Frontend should treat **HTTP status**, not `success`, as the source of truth for auth failures.
+
+#### Expired token
+
+**Status:** `401`
 
 ```json
 {
-  "message": "string",
-  "errStack": "string (development only)"
+  "message": "Token has expired, please login again",
+  "errStack": ""
 }
 ```
 
-### Rate limiting
+#### Invalid token / bad signature / wrong issuer / malformed JWT
 
-Authenticated user routes are limited to **100 requests / 15 minutes** per `userId`.
+**Status:** `401`
 
-| Status | Message |
-|---|---|
-| `429` | Too many requests. Please try again later. |
+```json
+{
+  "message": "Invalid token, please login again",
+  "errStack": ""
+}
+```
+
+#### Token valid but missing `sub`
+
+**Status:** `401`
+
+```json
+{
+  "message": "You're unauthorized to access this resource",
+  "errStack": ""
+}
+```
+
+#### Auth / JWKS internal failure
+
+**Status:** `500`
+
+```json
+{
+  "message": "Internal server error",
+  "errStack": ""
+}
+```
+
+**Frontend action for `400` (no token) / `401`:** redirect user to auth-service login.
 
 ---
 
-## Users
+## 2. Shared response shapes
 
-Shadow user profiles live in this service. Credentials live in the external auth service.
+### Success (most endpoints)
 
-### `GET /users/check`
+Built by `returnResponse`. Fields from the handler are merged at the **top level** (not nested under `data`).
 
-Check whether a shadow user profile exists for the authenticated user.
+```json
+{
+  "success": true,
+  "message": "Human-readable success message",
+  "...endpointSpecificFields": "..."
+}
+```
 
-**Auth:** Required
+### Error (global error handler)
 
-**Response `200`**
+```json
+{
+  "message": "Human-readable error message",
+  "errStack": "stack trace string in development, empty string in production"
+}
+```
+
+There is **no** `success: false` field on error responses from the global handler.
+
+### Exception: invalid ObjectId on PATCH/DELETE
+
+`validateObjectId` returns a different shape (not the global handler):
+
+```json
+{
+  "error": "Invalid Input"
+}
+```
+
+Frontend should handle both `{ message }` and `{ error }` error bodies.
+
+---
+
+## 3. Shared status codes / cross-cutting errors
+
+| Status | When | Typical message |
+|---|---|---|
+| `400` | Missing auth cookie | `No Token is provided` |
+| `400` | Validation / business rule | endpoint-specific |
+| `401` | Bad / expired JWT | see Auth errors |
+| `403` | Not owner of resource | `You're unauthorized to perform this action` |
+| `404` | Resource not found | `Transaction not found` |
+| `409` | Concurrent write lock | `Please wait some moments before trying again.` |
+| `409` | Shadow profile already exists | `User profile already exists` |
+| `429` | Rate limit exceeded | `Too many requests. Please try again later.` |
+| `500` | Unexpected / DB failure | `Internal Server Error` or wrapped DB message |
+
+### Rate limiting
+
+- Applies to authenticated `/users`, `/transactions`, `/analytics` routes
+- Keyed by `userId`
+- Limit: **100 requests / 15 minutes**
+- Headers: standard rate-limit headers are enabled (`RateLimit-*`)
+
+**Status:** `429`
+
+```json
+{
+  "message": "Too many requests. Please try again later.",
+  "errStack": ""
+}
+```
+
+**Frontend action:** show retry-later UI; optionally read `RateLimit-Reset`.
+
+### Resource lock (`409`)
+
+Applies to **POST /transactions**, **PATCH /transactions/:id**, **DELETE /transactions/:id** when another write for the same user is in progress.
+
+```json
+{
+  "message": "Please wait some moments before trying again.",
+  "errStack": ""
+}
+```
+
+**Frontend action:** wait ~300–1000ms and retry the same request. For creates, keep the same `X-Idempotency-Key`.
+
+---
+
+## 4. Frontend onboarding sequence
+
+```
+1. User authenticates via auth service → cookie `token` is set
+2. GET /api/users/check
+3. If exists === false → POST /api/users/profile  (optional { name })
+4. Load app data in parallel:
+     - GET /api/analytics
+     - GET /api/transactions
+5. Mutating flows:
+     - create with X-Idempotency-Key
+     - update / delete with ownership (always current user)
+```
+
+---
+
+## 5. Health
+
+### `GET /health`
+
+Unauthenticated. Not under `/api`.
+
+#### Success `200`
+
+```json
+{
+  "message": "Ok"
+}
+```
+
+No `success` field.
+
+---
+
+## 6. Users
+
+Shadow profile only. Credentials live in the auth service.
+
+### 6.1 `GET /api/users/check`
+
+Check whether the authenticated user already has a shadow profile.
+
+| Item | Value |
+|---|---|
+| Auth | Required (`token` cookie) |
+| Rate limited | Yes |
+| Request body | None |
+| Query params | None |
+
+#### Success `200` — profile exists
 
 ```json
 {
@@ -92,7 +268,7 @@ Check whether a shadow user profile exists for the authenticated user.
 }
 ```
 
-When the profile does not exist:
+#### Success `200` — profile does not exist
 
 ```json
 {
@@ -103,17 +279,28 @@ When the profile does not exist:
 }
 ```
 
-**Frontend flow:** call this after login. If `exists === false`, call `POST /users/profile`.
+#### Failures
+
+| Status | Body `message` / notes | Frontend action |
+|---|---|---|
+| `400` | `No Token is provided` | Send to login |
+| `401` | Auth errors above | Send to login |
+| `429` | Rate limited | Retry later |
+| `500` | DB / internal | Generic error toast |
 
 ---
 
-### `POST /users/profile`
+### 6.2 `POST /api/users/profile`
 
-Create a shadow user profile for the authenticated user.
+Create the shadow user profile for the authenticated user.
 
-**Auth:** Required
+| Item | Value |
+|---|---|
+| Auth | Required |
+| Rate limited | Yes |
+| Content-Type | `application/json` |
 
-**Request body**
+#### Request body
 
 ```json
 {
@@ -121,13 +308,19 @@ Create a shadow user profile for the authenticated user.
 }
 ```
 
-| Field | Type | Required | Notes |
+| Field | Type | Required | Rules |
 |---|---|---|---|
-| `name` | `string` | No | Trimmed; omit to leave `name` undefined |
+| `name` | `string` | No | If present: trimmed, min length 1. If omitted/`undefined`, profile is created without `name`. |
 
-`role` is always `"user"`. `plan` is always `"free"`. `_id` is set from the JWT `sub` claim.
+**Not accepted from client (server defaults):**
 
-**Response `201`**
+| Field | Default |
+|---|---|
+| `_id` | JWT `sub` |
+| `role` | `"user"` |
+| `plan` | `"free"` |
+
+#### Success `201`
 
 ```json
 {
@@ -144,33 +337,77 @@ Create a shadow user profile for the authenticated user.
 }
 ```
 
-**Errors**
+If `name` was omitted, `name` may be absent/`undefined` on the document.
 
-| Status | When |
-|---|---|
-| `400` | Invalid body |
-| `409` | Profile already exists |
+#### Failures
+
+| Status | Body | When | Frontend action |
+|---|---|---|---|
+| `400` | `{ "message": "Invalid data", "errStack": "" }` | `name` present but empty/invalid | Fix form input |
+| `400` / `401` | Auth errors | Missing/invalid cookie | Login |
+| `409` | `{ "message": "User profile already exists", "errStack": "" }` | Profile already created | Treat as success; continue to app (or re-call `/users/check`) |
+| `429` | Rate limited | Too many calls | Retry later |
+| `500` | DB / internal | Unexpected | Error toast |
 
 ---
 
-## Transactions
+## 7. Transactions
 
-All transaction data is scoped to the authenticated user's shadow `_id`.
+All transaction endpoints are scoped to the authenticated user. Soft-deleted rows (`deletedAt != null`) are excluded from list/analytics.
 
-### `GET /transactions`
+### Transaction object shape
 
-List the current user's non-deleted transactions.
+```json
+{
+  "_id": "64f1a2b3c4d5e6f7a8b9c0d1",
+  "amount": 1500,
+  "type": "income",
+  "date": "2024-01-15T00:00:00.000Z",
+  "category": "Salary",
+  "description": "Monthly salary deposit",
+  "userId": "69cfaf4cd681a6a77b076222",
+  "idempotencyKey": "8f3c2a1b-4d5e-6f70-8192-a3b4c5d6e7f8",
+  "deletedAt": null,
+  "createdAt": "2026-07-23T00:00:00.000Z",
+  "updatedAt": "2026-07-23T00:00:00.000Z"
+}
+```
 
-**Auth:** Required
+| Field | Notes |
+|---|---|
+| `type` | `"income"` \| `"expense"` — immutable after create |
+| `date` | Immutable after create |
+| `deletedAt` | `null` when active; ISO date when soft-deleted |
+| `idempotencyKey` | Set only on create; unique across all transactions |
 
-**Query parameters**
+---
 
-| Param | Type | Required | Notes |
+### 7.1 `GET /api/transactions`
+
+List the current user's active transactions (newest date first).
+
+| Item | Value |
+|---|---|
+| Auth | Required |
+| Rate limited | Yes |
+
+#### Query parameters
+
+| Param | Type | Required | Rules |
 |---|---|---|---|
-| `type` | `"income"` \| `"expense"` | No | Filter by type |
-| `category` | `string` | No | Filter by category |
+| `type` | `"income"` \| `"expense"` | No | Exact enum |
+| `category` | `string` | No | Trimmed, min length 1 |
 
-**Response `200`**
+Examples:
+
+```
+GET /api/transactions
+GET /api/transactions?type=expense
+GET /api/transactions?category=Food
+GET /api/transactions?type=income&category=Salary
+```
+
+#### Success `200`
 
 ```json
 {
@@ -194,27 +431,45 @@ List the current user's non-deleted transactions.
 }
 ```
 
-**Errors**
+Empty list is still success:
 
-| Status | When |
-|---|---|
-| `400` | Invalid query parameters |
+```json
+{
+  "success": true,
+  "message": "Transactions fetched successfully",
+  "transactions": []
+}
+```
+
+#### Failures
+
+| Status | Body | When | Frontend action |
+|---|---|---|---|
+| `400` | `{ "message": "Invalid query parameters", "errStack": "" }` | Bad `type` / empty `category` / unknown invalid query shape | Fix filters |
+| `400` / `401` | Auth errors | Cookie issues | Login |
+| `429` | Rate limited | Too many calls | Retry later |
+| `500` | e.g. `Failed to fetch transactions` | DB failure | Error toast |
 
 ---
 
-### `POST /transactions`
+### 7.2 `POST /api/transactions`
 
-Create a transaction. Idempotent via `X-Idempotency-Key`.
+Create a transaction. **Idempotent.**
 
-**Auth:** Required
+| Item | Value |
+|---|---|
+| Auth | Required |
+| Rate limited | Yes |
+| Lock check | Yes (`409` if user write in progress) |
+| Content-Type | `application/json` |
 
-**Headers**
+#### Headers
 
-| Header | Required | Notes |
+| Header | Required | Rules |
 |---|---|---|
-| `X-Idempotency-Key` | Yes | Unique client-generated key per create attempt |
+| `X-Idempotency-Key` | **Yes** | Non-empty trimmed string. Generate once per create attempt (UUID recommended). Reuse on retries of the **same** create. |
 
-**Request body**
+#### Request body
 
 ```json
 {
@@ -226,67 +481,106 @@ Create a transaction. Idempotent via `X-Idempotency-Key`.
 }
 ```
 
-| Field | Type | Required | Notes |
+| Field | Type | Required | Rules |
 |---|---|---|---|
-| `amount` | `number` | Yes | Must be `> 0`, max `1000000000` |
-| `type` | `"income"` \| `"expense"` | Yes | Immutable after create |
-| `date` | ISO date string | Yes | Coerced to `Date`; cannot be in the future |
-| `category` | `string` | Yes | 1–50 chars |
-| `description` | `string` | Yes | 1–500 chars |
+| `amount` | `number` | Yes | `> 0`, max `1000000000` (must be a JSON number, not a string) |
+| `type` | `string` | Yes | `"income"` or `"expense"` only |
+| `date` | ISO date string | Yes | Coerced to `Date`; **cannot be in the future** |
+| `category` | `string` | Yes | Trimmed, 1–50 chars |
+| `description` | `string` | Yes | Trimmed, 1–500 chars |
 
-**Response `201` (fresh create)**
+#### Success `201` — fresh create
 
 ```json
 {
   "success": true,
   "message": "Transaction created successfully",
   "transactionID": "64f1a2b3c4d5e6f7a8b9c0d1",
-  "transactionData": { }
+  "transactionData": {
+    "_id": "64f1a2b3c4d5e6f7a8b9c0d1",
+    "amount": 1500,
+    "type": "income",
+    "date": "2024-01-15T00:00:00.000Z",
+    "category": "Salary",
+    "description": "Monthly salary deposit",
+    "userId": "69cfaf4cd681a6a77b076222",
+    "idempotencyKey": "8f3c2a1b-4d5e-6f70-8192-a3b4c5d6e7f8",
+    "deletedAt": null,
+    "createdAt": "2026-07-23T00:00:00.000Z",
+    "updatedAt": "2026-07-23T00:00:00.000Z"
+  }
 }
 ```
 
-**Response `200` (idempotent replay)**
+No `Idempotency-Replay` header on fresh create.
 
-Same body shape as a successful create, plus response header:
+#### Success `200` — idempotent replay
+
+Returned when the same `X-Idempotency-Key` was already committed (lookup hit or concurrent duplicate-key race).
+
+**Response header:**
 
 ```
 Idempotency-Replay: true
 ```
 
-Returned when the same `X-Idempotency-Key` was already committed. Safe for client retries.
+**Body:**
 
-**Errors**
+```json
+{
+  "success": true,
+  "message": "This transaction has already been processed",
+  "transactionID": "64f1a2b3c4d5e6f7a8b9c0d1",
+  "transactionData": { }
+}
+```
 
-| Status | When |
-|---|---|
-| `400` | Missing/invalid `X-Idempotency-Key` |
-| `400` | Invalid body |
-| `400` | Insufficient balance (expense only) |
-| `409` | Resource locked — another write for this user is in progress |
+(Race-path message may be `"This transaction has already been processed"` as above.)
 
-**Frontend guidance**
+**Frontend action:** treat as success. Do **not** create again. Prefer checking the `Idempotency-Replay` header; also accept `200` + existing `transactionID` as success.
 
-1. Generate a UUID (or similar) per create attempt and send it as `X-Idempotency-Key`.
-2. On network failure / timeout, retry with the **same** key.
-3. If the response includes `Idempotency-Replay: true`, treat it as success — do not create again.
-4. On `409`, wait briefly and retry (optionally with the same key for creates).
+#### Failures
+
+| Status | Body | When | Frontend action |
+|---|---|---|---|
+| `400` | `{ "message": "Missing or invalid x-idempotency-key header", "errStack": "" }` | Header missing/empty | Always send a key |
+| `400` | `{ "message": "Invalid data", "errStack": "" }` | Body fails Zod rules | Show field validation errors client-side using the rules table |
+| `400` | `{ "message": "Insufficient balance for this expense transaction", "errStack": "" }` | Expense larger than current balance | Show insufficient funds; allow user to add income or reduce amount. **Same idempotency key can be reused** after fixing (failed creates are not persisted as success) |
+| `400` / `401` | Auth errors | Cookie issues | Login |
+| `409` | `{ "message": "Please wait some moments before trying again.", "errStack": "" }` | User lock held | Wait + retry **same** key |
+| `429` | Rate limited | Too many calls | Retry later with **same** key if create not confirmed |
+| `500` | e.g. `Failed to record the transaction` / `Failed to check idempotency key` | Unexpected | If uncertain whether create succeeded, retry with **same** key |
+
+#### Idempotency rules for frontend
+
+1. Generate a new key only for a **new user intent** to create.
+2. On network timeout / `5xx` / unknown outcome → retry with the **same** key.
+3. On validation / insufficient funds → you may reuse the same key after the user fixes input (failure was not stored as a successful transaction).
+4. On `Idempotency-Replay: true` → stop retrying; show success.
 
 ---
 
-### `PATCH /transactions/:transactionId`
+### 7.3 `PATCH /api/transactions/:transactionId`
 
 Update a transaction owned by the authenticated user.
 
-**Auth:** Required  
-**Ownership:** Enforced
+| Item | Value |
+|---|---|
+| Auth | Required |
+| Rate limited | Yes |
+| Ownership | Required (must own the row) |
+| Lock check | Yes |
+| Content-Type | `application/json` |
 
-**Path params**
+#### Path params
 
-| Param | Type | Notes |
-|---|---|---|
-| `transactionId` | MongoDB ObjectId string | Validated |
+| Param | Type | Required | Rules |
+|---|---|---|---|
+| `transactionId` | MongoDB ObjectId string | Yes | Valid ObjectId format |
 
-**Request body** (all fields optional; at least one required)
+#### Request body
+
+All fields optional, but **at least one mutable field** must be present after validation.
 
 ```json
 {
@@ -296,44 +590,73 @@ Update a transaction owned by the authenticated user.
 }
 ```
 
-| Field | Mutable |
-|---|---|
-| `amount` | Yes |
-| `category` | Yes |
-| `description` | Yes |
-| `type` | **No** — rejected by schema |
-| `date` | **No** — rejected by schema |
+| Field | Mutable | Rules |
+|---|---|---|
+| `amount` | Yes | Same as create: `> 0`, max `1000000000` |
+| `category` | Yes | Trimmed, 1–50 chars |
+| `description` | Yes | Trimmed, 1–500 chars |
+| `type` | **No** | Rejected by schema → `400 Invalid data` |
+| `date` | **No** | Rejected by schema → `400 Invalid data` |
 
-**Response `200`**
+#### Success `200`
 
 ```json
 {
   "success": true,
   "message": "Transaction updated successfully",
   "transactionID": "64f1a2b3c4d5e6f7a8b9c0d1",
-  "transactionData": { }
+  "transactionData": {
+    "_id": "64f1a2b3c4d5e6f7a8b9c0d1",
+    "amount": 2000,
+    "type": "income",
+    "date": "2024-01-15T00:00:00.000Z",
+    "category": "Freelance",
+    "description": "Updated description",
+    "userId": "69cfaf4cd681a6a77b076222",
+    "idempotencyKey": "8f3c2a1b-4d5e-6f70-8192-a3b4c5d6e7f8",
+    "deletedAt": null,
+    "createdAt": "2026-07-23T00:00:00.000Z",
+    "updatedAt": "2026-07-23T01:00:00.000Z"
+  }
 }
 ```
 
-**Errors**
+#### Failures
 
-| Status | When |
-|---|---|
-| `400` | Invalid ObjectId / invalid body / no valid fields |
-| `403` | Not the owner |
-| `404` | Transaction not found |
-| `409` | Resource locked |
+| Status | Body | When | Frontend action |
+|---|---|---|---|
+| `400` | `{ "error": "Invalid Input" }` | `transactionId` not a valid ObjectId | Fix route param / navigation |
+| `400` | `{ "message": "Missing objectId", "errStack": "" }` | Param missing | Should not happen via normal routing |
+| `400` | `{ "message": "Invalid data", "errStack": "" }` | Body fails Zod (incl. sending `type`/`date`) | Fix form |
+| `400` | `{ "message": "No valid fields provided for update", "errStack": "" }` | Empty / no allowed fields | Require at least one editable field |
+| `400` / `401` | Auth errors | Cookie issues | Login |
+| `403` | `{ "message": "You're unauthorized to perform this action", "errStack": "" }` | Not the owner | Show forbidden; refresh list |
+| `404` | `{ "message": "Transaction not found", "errStack": "" }` | Unknown id | Remove from UI / refresh |
+| `409` | Lock held | Concurrent write | Wait + retry |
+| `429` | Rate limited | Too many calls | Retry later |
+| `500` | e.g. `Failed to update the transaction record` | Unexpected | Error toast |
 
 ---
 
-### `DELETE /transactions/:transactionId`
+### 7.4 `DELETE /api/transactions/:transactionId`
 
-Soft-delete a transaction (`deletedAt` set). Never hard-deletes.
+Soft-delete a transaction (`deletedAt` set to now). Never hard-deletes.
 
-**Auth:** Required  
-**Ownership:** Enforced
+| Item | Value |
+|---|---|
+| Auth | Required |
+| Rate limited | Yes |
+| Ownership | Required |
+| Lock check | Yes |
+| Request body | None |
 
-**Response `200`**
+#### Path params
+
+| Param | Type | Required |
+|---|---|---|
+| `transactionId` | MongoDB ObjectId string | Yes |
+
+#### Success `200`
 
 ```json
 {
@@ -342,26 +665,39 @@ Soft-delete a transaction (`deletedAt` set). Never hard-deletes.
 }
 ```
 
-**Errors**
+No transaction payload is returned.
 
-| Status | When |
-|---|---|
-| `400` | Invalid ObjectId / already deleted |
-| `403` | Not the owner |
-| `404` | Transaction not found |
-| `409` | Resource locked |
+#### Failures
+
+| Status | Body | When | Frontend action |
+|---|---|---|---|
+| `400` | `{ "error": "Invalid Input" }` | Invalid ObjectId | Fix param |
+| `400` | `{ "message": "Missing objectId", "errStack": "" }` | Missing param | Should not happen |
+| `400` | `{ "message": "This transaction has already been deleted", "errStack": "" }` | Already soft-deleted | Treat as deleted; refresh list |
+| `400` / `401` | Auth errors | Cookie issues | Login |
+| `403` | Not owner | Forbidden | Refresh list |
+| `404` | Not found | Unknown id | Refresh list |
+| `409` | Lock held | Concurrent write | Wait + retry |
+| `429` | Rate limited | Too many calls | Retry later |
+| `500` | e.g. `Failed to delete the transaction record` | Unexpected | Error toast |
 
 ---
 
-## Analytics
+## 8. Analytics
 
-### `GET /analytics`
+### 8.1 `GET /api/analytics`
 
-Return income/expense totals and category breakdown for the authenticated user only.
+Income/expense totals and per-category net balance for the **authenticated user only**.
 
-**Auth:** Required
+| Item | Value |
+|---|---|
+| Auth | Required |
+| Rate limited | Yes |
+| Query / body | None |
 
-**Response `200`**
+Soft-deleted transactions are excluded.
+
+#### Success `200`
 
 ```json
 {
@@ -379,28 +715,87 @@ Return income/expense totals and category breakdown for the authenticated user o
 }
 ```
 
----
-
-## Health
-
-### `GET /health`
-
-Unauthenticated liveness check (not under `/api`).
-
-**Response `200`**
+#### Empty account / no transactions `200`
 
 ```json
 {
-  "message": "Ok"
+  "success": true,
+  "message": "Analytics data retrieved successfully",
+  "totals": {
+    "totalIncome": 0,
+    "totalExpense": 0,
+    "count": 0
+  },
+  "categoryBreakdown": []
 }
 ```
 
+| Field | Meaning |
+|---|---|
+| `totals.totalIncome` | Sum of income amounts |
+| `totals.totalExpense` | Sum of expense amounts |
+| `totals.count` | Number of active transactions |
+| `categoryBreakdown[]._id` | Category name |
+| `categoryBreakdown[].netBalance` | Income positive, expense negative contribution |
+
+Derived balance for UI: `totals.totalIncome - totals.totalExpense`.
+
+#### Failures
+
+| Status | Body | When | Frontend action |
+|---|---|---|---|
+| `400` / `401` | Auth errors | Cookie issues | Login |
+| `429` | Rate limited | Too many calls | Retry later |
+| `500` | e.g. `Failed to fetch analytics data` | Unexpected | Error toast |
+
 ---
 
-## Suggested frontend onboarding sequence
+## 9. Frontend handling checklist
 
-1. User logs in via the external auth service (JWT cookie is set).
-2. Call `GET /api/users/check`.
-3. If `exists === false`, call `POST /api/users/profile` with optional `{ name }`.
-4. Load dashboard: `GET /api/analytics` + `GET /api/transactions`.
-5. Creates always send a fresh `X-Idempotency-Key`; retries reuse the same key.
+Use this when wiring the client so nothing is missed.
+
+### Must always do
+
+- [ ] Send `credentials: "include"` on every API call
+- [ ] On `400` with message `No Token is provided` or any `401` → redirect to auth login
+- [ ] After login → `GET /users/check` → maybe `POST /users/profile`
+- [ ] Treat HTTP status as source of truth (do not rely only on `success`)
+- [ ] Handle both error shapes: `{ message }` and `{ error: "Invalid Input" }`
+- [ ] For creates: always send `X-Idempotency-Key`; reuse on uncertain retries
+- [ ] On `Idempotency-Replay: true` → treat as success
+- [ ] On `409` lock → brief wait + retry
+- [ ] On `429` → backoff / retry later
+- [ ] Never send `type` or `date` on PATCH
+- [ ] Send `amount` as a JSON number, not `"1500"`
+
+### Recommended UX mappings
+
+| Backend case | UI behaviour |
+|---|---|
+| Insufficient balance | Inline error on amount / type=expense |
+| Idempotency replay | Silent success / “already saved” |
+| Already deleted | Remove row from list |
+| Profile already exists (`409`) | Continue into app |
+| Empty transactions / analytics | Empty states, not errors |
+| Network failure after create | Retry same idempotency key; then refresh list |
+
+### Endpoint map (quick)
+
+| Method | Path | Purpose |
+|---|---|---|
+| `GET` | `/health` | Liveness |
+| `GET` | `/api/users/check` | Shadow profile exists? |
+| `POST` | `/api/users/profile` | Create shadow profile |
+| `GET` | `/api/transactions` | List (+ optional filters) |
+| `POST` | `/api/transactions` | Create (idempotent) |
+| `PATCH` | `/api/transactions/:transactionId` | Update owned txn |
+| `DELETE` | `/api/transactions/:transactionId` | Soft-delete owned txn |
+| `GET` | `/api/analytics` | Totals + category breakdown |
+
+### Out of scope on this backend
+
+- Login / logout / register / password reset (auth service)
+- Admin / multi-user RBAC
+- Pagination / sorting params beyond default date desc
+- File uploads
+- Webhooks

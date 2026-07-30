@@ -29,6 +29,11 @@ const transactionSchema = new Schema({
         type: String,
         required: true
     },
+    idempotencyKey: {
+        type: String,
+        required: true,
+        unique: true
+    },
     deletedAt: {
         type: Date,
         default: null

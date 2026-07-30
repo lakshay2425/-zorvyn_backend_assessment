@@ -1,11 +1,15 @@
-# FinTech Core Concurrency API
+# Personal Income & Expense Tracker API
 
-A production-minded **Node.js/Express** REST API for financial transaction management, built with a focus on data integrity, concurrency safety, and role-aware security.
+A production-minded **Node.js/Express** REST API for personal income and expense tracking, built with a focus on data integrity and concurrency safety.
+
+> **Current API reference for frontend work:** see [`API.md`](./API.md).  
+> **Frontend Labs (idempotency + concurrency demos):** see [`FRONTEND_LABS.md`](./FRONTEND_LABS.md).
 
 ---
 
 ## Table of Contents
 
+- [Project Evolution](#project-evolution)
 - [Features](#features)
 - [Tech Stack](#tech-stack)
 - [Project Structure](#project-structure)
@@ -19,15 +23,37 @@ A production-minded **Node.js/Express** REST API for financial transaction manag
 
 ---
 
+## Project Evolution
+
+This repository started as a **backend assessment** focused on concurrency patterns for a multi-role FinTech API (RBAC with `admin` / `analyst` / `viewer`, local JWT login with HS256 + bcrypt, and in-memory idempotency keys).
+
+It has been evolved into **Personal Income & Expense Tracker v1** with these intentional changes:
+
+| Area | Assessment (original) | Tracker v1 (current) |
+|---|---|---|
+| Product scope | Multi-role financial API | Single-owner personal income/expense tracker |
+| Auth | Local login/signup issuing HS256 JWTs | External auth service; this API verifies **RS256** JWTs from a cookie using JWKS (`jwks-rsa`, issuer `auth-service`) |
+| Users | Full credential user documents | Shadow `users` collection (`_id` = auth `sub`, plus `name`, `role`, `plan`) |
+| RBAC | Enforced via `checkUserPermission` | Removed — every authenticated user only accesses their own data |
+| Idempotency | In-memory `proccessedTransactionKeys` map | Persisted on each transaction (`idempotencyKey` + unique MongoDB index) |
+| Async errors | Custom `asyncHandler` wrapper | Removed — Express 5 forwards rejected promises natively |
+| Concurrency | In-memory per-user lock via `balanceCache.status` | Unchanged for v1 (single instance); Redis deferred to v2 |
+| Docs | API details embedded in this README | Active API contract lives in [`API.md`](./API.md) |
+
+Sections below that describe the original assessment design (especially RBAC and local HS256 auth) are kept for historical context. Prefer [`API.md`](./API.md) and the current source tree for implementing the React frontend.
+
+---
+
 ## Features
 
-- **JWT Authentication** with HttpOnly cookie transport
-- **Role-Based Access Control (RBAC)** — `admin`, `analyst`, `viewer`
+- **External JWT Authentication** — RS256 verification via HttpOnly cookie; public key cached in memory
+- **Shadow User Profiles** — local `users` collection keyed by auth service `sub` (`role: user`, `plan: free`)
 - **Full Transaction CRUD** with ownership enforcement
 - **Soft Delete** — records are never hard-deleted; `deletedAt` timestamp is set instead
-- **Idempotency** — duplicate `POST /transactions` requests are safely deduplicated
+- **Idempotency** — `X-Idempotency-Key` stored on each transaction with a unique MongoDB index (success-only semantics)
 - **Write-Through Balance Caching** — in-memory cache keeps balance current without redundant aggregation
 - **In-Memory Concurrency Locking** — per-user mutex prevents race conditions on writes
+- **Stale Cache Eviction** — hourly sweep removes `balanceCache` entries older than 24 hours
 - **User-Based Rate Limiting** — throttled by `userId`, not IP
 - **Analytics Aggregation** — income/expense totals and category breakdowns via MongoDB `$facet`
 - **Zod Schema Validation** — strict input validation with partial schemas for `PATCH` routes
@@ -44,9 +70,8 @@ A production-minded **Node.js/Express** REST API for financial transaction manag
 | Framework | Express 5 |
 | Database | MongoDB via Mongoose 9 |
 | Validation | Zod 4 |
-| Auth | jsonwebtoken (HS256) + bcrypt |
+| Auth | jsonwebtoken (RS256 verify) |
 | Rate Limiting | express-rate-limit 8 |
-| ID Generation | uuid v4 |
 | Error Handling | http-errors |
 | Containerisation | Docker + Docker Compose |
 
@@ -57,21 +82,20 @@ A production-minded **Node.js/Express** REST API for financial transaction manag
 ```
 .
 ├── app.js                        # Express app setup
-├── server.js                     # Server entry point
+├── server.js                     # Server entry point + balanceCache eviction
+├── API.md                        # Current API contract (use this for frontend)
 ├── Docker/
 │   ├── Dockerfile
 │   ├── Dockerfile.dev
 │   └── compose.dev.yml
 └── src/
     ├── config/                   # App config & Mongoose connection
-    ├── constants/
-    │   └── permissions.js        # ACTIONS enum + ROLE_PERMISSIONS map
     ├── controllers/              # Request handling layer
-    ├── middleware/               # Auth, RBAC, rate limiting, locking, ownership
+    ├── middleware/               # Auth, rate limiting, locking, ownership
     ├── routes/                   # Express routers
     ├── schema/                   # Mongoose models (User, Transaction)
     ├── services/                 # Business logic layer
-    ├── utilis/                   # asyncHandler, dbOperation, withUserLock
+    ├── utilis/                   # dbOperation, withUserLock, helpers
     └── validationSchemas/        # Zod schemas
 ```
 
@@ -82,6 +106,8 @@ A production-minded **Node.js/Express** REST API for financial transaction manag
 ---
 
 ## Security & Architectural Decisions
+
+> Historical note: the subsections immediately below document decisions from the original assessment. In v1, authentication is RS256 against an external auth service and RBAC has been removed. See [Project Evolution](#project-evolution) and [`API.md`](./API.md).
 
 ### Authentication — Symmetric JWT (HS256)
 
@@ -178,116 +204,11 @@ Private end-user. Can only view the analytics dashboard, and their analytics que
 
 ## API Documentation
 
-All routes are prefixed with `/api`.
+**Current (v1) API contract for frontend implementation:** [`API.md`](./API.md)
 
-### Authentication
+That document covers authentication, shadow user routes (`GET /users/check`, `POST /users/profile`), transactions (including idempotency replay behaviour), analytics, error shapes, and the recommended frontend onboarding sequence.
 
-| Method | Route | Description | Auth Required |
-|---|---|---|---|
-| `POST` | `/users/register` | Create a new user account | Admin only |
-| `POST` | `/users/login` | Authenticate and receive session cookie | No |
-| `POST` | `/users/logout` | Clear the session cookie | No |
-
-#### `POST /users/register` — Request Body
-```json
-{
-  "name": "string (min 6)",
-  "email": "string (valid email)",
-  "username": "string (min 8)",
-  "password": "string (min 6)",
-  "role": "viewer | analyst | admin",
-  "isActive": true
-}
-```
-
-#### `POST /users/login` — Request Body
-```json
-{
-  "email": "string",
-  "password": "string"
-}
-```
-
----
-
-### Transactions
-
-All transaction routes require authentication. Ownership is enforced on `PATCH` and `DELETE`.
-
-| Method | Route | Description | Required Role |
-|---|---|---|---|
-| `GET` | `/transactions` | Fetch current user's transactions | `admin`, `analyst` |
-| `POST` | `/transactions` | Create a new transaction | `admin` |
-| `PATCH` | `/transactions/:transactionId` | Update a transaction | `admin` (owner) |
-| `DELETE` | `/transactions/:transactionId` | Soft-delete a transaction | `admin` (owner) |
-
-#### `GET /transactions` — Query Parameters
-
-| Parameter | Type | Description |
-|---|---|---|
-| `type` | `income` \| `expense` | Filter by transaction type |
-| `category` | `string` | Filter by category name |
-
-#### `POST /transactions` — Request Headers & Body
-
-```
-X-Idempotency-Key: <uuid>   (required)
-```
-
-```json
-{
-  "amount": 1500.00,
-  "type": "income | expense",
-  "date": "2024-01-15",
-  "category": "Salary",
-  "description": "Monthly salary deposit"
-}
-```
-
-**Response Headers on duplicate key:**
-```
-Idempotency-Replay: true
-```
-
-#### `PATCH /transactions/:transactionId` — Request Body
-
-Only `amount`, `category`, and `description` are mutable. `type` and `date` are rejected by the validation schema.
-
-```json
-{
-  "amount": 2000.00,
-  "category": "Freelance",
-  "description": "Updated description"
-}
-```
-
----
-
-### Analytics
-
-| Method | Route | Description | Required Role |
-|---|---|---|---|
-| `GET` | `/analytics` | Fetch income/expense totals and category breakdown | `admin`, `analyst`, `viewer` |
-
-`viewer` results are scoped to their own transactions. `admin` and `analyst` receive aggregated data across all users.
-
-#### `GET /analytics` — Response
-```json
-{
-  "message": "Analytics data retrieved successfully",
-  "data": {
-    "totals": {
-      "totalIncome": 5000,
-      "totalExpense": 1200,
-      "count": 12
-    },
-    "categoryBreakdown": [
-      { "_id": "Salary", "netBalance": 5000 },
-      { "_id": "Food", "netBalance": -800 }
-    ]
-  }
-}
-```
+The assessment-era endpoint tables that previously lived in this section have been superseded by `API.md`.
 
 ---
 
@@ -363,11 +284,12 @@ See `.env.sample` for all required variables:
 PORT=           # Port the server listens on (e.g. 3000)
 NODE_ENV=       # 'development' or 'production'
 DB_URI=         # MongoDB connection string
-JWT_SECRET=     # Secret key for HS256 JWT signing (use a long, random string)
 BYPASS_AUTH=    # Set to 'true' to skip JWT verification in development
 ```
 
 > **Security note:** `BYPASS_AUTH` is only respected when `NODE_ENV=development`. It should never be set to `true` in production.
+
+> **Auth note (v1):** JWT verification uses RS256 against the auth service JWKS endpoint via `jwks-rsa` (`src/utilis/jwt.js`). There is no local `JWT_SECRET` in this service anymore.
 
 ---
 

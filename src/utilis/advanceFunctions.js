@@ -1,10 +1,3 @@
-export const asyncHandler =  (fn) => {
-    return ((req, res, next) => {
-        Promise.resolve(fn(req, res, next)).catch(next);
-    });
-};
-
-
 //Database operation wrapper
 export const dbOperation = async (operation, errorMessage) => {
     try {
@@ -33,7 +26,7 @@ export const serviceOperation = async (operation, errorMessage) => {
 };
 
 //Release user lock
-export const withUserLock = async (userId, balanceCache,operation) => {
+export const withUserLock = async (userId, balanceCache, operation) => {
     try {
         return await operation();
     } finally {

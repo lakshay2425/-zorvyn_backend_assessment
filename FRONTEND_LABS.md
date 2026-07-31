@@ -1,7 +1,7 @@
 # Frontend Labs Spec — Idempotency & Concurrency Demos
 
 Use this document to implement a dedicated **Labs** section in the React frontend.  
-**No backend changes are required.** Both labs only call existing APIs from [`API.md`](./API.md).
+Labs call existing transaction APIs plus **`DELETE /api/transactions/lab`** for cleanup (see [`API.md`](./API.md) §7.5).
 
 ---
 
@@ -126,6 +126,7 @@ function recordRun(storeKey: string) {
 Labs
 ├── Intro (what this page is / is not)
 ├── Usage remaining badges (per lab)
+├── Clear lab data (DELETE /api/transactions/lab)
 ├── Idempotency Lab card/section
 └── Concurrency Lab card/section
 ```
@@ -283,7 +284,7 @@ Before enabling Run:
 
 1. Shadow user exists.
 2. If using expenses: current spendable balance should be `>= count * amount`.  
-   - Simple approach: before the lab, offer **“Add demo income”** button that creates one income transaction (its own unique idempotency key, **not** counted as a lab run, or count it separately — recommend **not** counting setup income against lab quota).
+   - Simple approach: before the lab, offer **“Add demo income”** button that creates one income transaction with category **`Concurrency Lab Seed`** (its own unique idempotency key, **not** counted as a lab run).
 3. Warn if balance is too low.
 
 ### Request behaviour
@@ -327,10 +328,10 @@ No automatic retry loop in this version.
 
 #### Expected pattern (typical)
 
-- About **1** (sometimes a few) succeed with `201`
-- Several return **`409`** with message:  
+- About **1** succeeds with `201` when many requests fire at the same instant
+- The rest return **`409`** with message:  
   `Please wait some moments before trying again.`
-- Because requests launch together, more than one success can slip through before the lock flag is set — that is OK. Explain it.
+- If a request arrives **after** the first write completes, it may succeed too — mutex allows one in flight at a time, not one total forever
 
 #### Results table columns
 
@@ -351,7 +352,7 @@ Color:
 #### Technical note (collapsed)
 
 - Backend lock is **reject-on-busy**, not a server queue
-- Lock checked by `checkResourceLock` before write handlers
+- Lock acquired atomically by `acquireUserLock` middleware before write handlers
 - Concurrent lab must use **different** idempotency keys (otherwise this becomes an idempotency demo)
 - Expense path is preferred because it engages balance + lock status
 - See `API.md` for `409` body
@@ -386,9 +387,9 @@ Color:
 `Lab limit reached: 2 runs every 2 hours. Next run available at {time}.`
 
 ### Concurrency empty 409 case (edge)
-If somehow no `409` appears (lock race / very fast DB):
+If somehow no `409` appears (all requests spaced apart or very fast completion):
 
-> No 409 this time — requests finished so quickly that a lock collision wasn’t observed. Try a higher request count.
+> No 409 this time — requests did not overlap while a write was in progress. Try a higher request count or fire them closer together.
 
 ---
 
@@ -425,6 +426,62 @@ Suggested components:
 
 ---
 
+## 8. Clear lab data
+
+Remove all demo transactions created by the labs without touching real user data.
+
+### API
+
+```
+DELETE /api/transactions/lab
+```
+
+No body. Auth cookie required. See [`API.md`](./API.md) §7.5.
+
+**Categories removed:** `Idempotency Lab`, `Concurrency Lab`, `Concurrency Lab Seed`.
+
+### UI
+
+| Control | Behaviour |
+|---|---|
+| Button label | “Clear lab transactions” (secondary / destructive styling) |
+| Placement | Labs page header or footer — not in normal transaction CRUD |
+| Confirmation | “Delete all lab demo transactions? Your real transactions are not affected.” |
+| On success | Toast with `deletedCount`; refresh transaction list + analytics |
+| On `409` | “Another change is in progress — try again shortly.” |
+| On `deletedCount: 0` | “No lab transactions to remove.” (still success) |
+
+### Example
+
+```ts
+async function clearLabTransactions() {
+  const res = await fetch("/api/transactions/lab", {
+    method: "DELETE",
+    credentials: "include",
+  });
+  const body = await res.json();
+  // res.ok → show body.data.deletedCount, refresh lists
+}
+```
+
+### Demo income payload (Concurrency Lab Seed)
+
+When seeding balance before Concurrency Lab:
+
+```json
+{
+  "amount": 100,
+  "type": "income",
+  "date": "2026-07-31",
+  "category": "Concurrency Lab Seed",
+  "description": "Demo income for concurrency lab"
+}
+```
+
+Use a **new** `X-Idempotency-Key` per seed click.
+
+---
+
 ## 9. Acceptance checklist
 
 ### Idempotency Lab
@@ -450,6 +507,8 @@ Suggested components:
 - [ ] Run disabled while in flight
 - [ ] Run disabled when rate-limited
 - [ ] Labs separated from normal create form UX
+- [ ] Clear lab data with confirmation; uses `DELETE /api/transactions/lab`
+- [ ] Demo income uses category `Concurrency Lab Seed` exactly
 
 ---
 
@@ -470,9 +529,10 @@ Only these (details in [`API.md`](./API.md)):
 | Lab | Calls |
 |---|---|
 | Setup | `GET /api/users/check`, maybe `POST /api/users/profile` |
-| Optional balance seed | `POST /api/transactions` (income, unique key) |
+| Optional balance seed | `POST /api/transactions` (income, category `Concurrency Lab Seed`, unique key) |
 | Idempotency Lab | `POST /api/transactions` × N (same key) |
 | Concurrency Lab | `POST /api/transactions` × N (different keys) |
+| Clear lab data | `DELETE /api/transactions/lab` |
 | Optional verify | `GET /api/transactions` after a run to confirm counts |
 
 ---
@@ -481,7 +541,7 @@ Only these (details in [`API.md`](./API.md)):
 
 | Topic | Decision |
 |---|---|
-| Backend changes | **None** |
+| Backend cleanup | `DELETE /api/transactions/lab` (lab categories + `Concurrency Lab Seed`) |
 | Idempotency demo | Same key, parallel, show replays |
 | Concurrency demo | Different keys, parallel, show `409`s, no auto-retry |
 | Abuse protection | Frontend: **2 runs / 2 hours** per lab |

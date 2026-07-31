@@ -99,7 +99,7 @@ Sections below that describe the original assessment design (especially RBAC and
     ├── routes/                   # Express routers
     ├── schema/                   # Mongoose models (User, Transaction)
     ├── services/                 # Business logic layer
-    ├── utilis/                   # dbOperation, withUserLock, balanceCache helpers
+    ├── utilis/                   # dbOperation, balanceCache + lock helpers
     └── validationSchemas/        # Zod schemas
 ```
 
@@ -142,7 +142,7 @@ Every `POST /transactions` request must include an `X-Idempotency-Key` header. T
 
 When a duplicate key is detected, the response includes the header **`Idempotency-Replay: true`** so clients can distinguish a replayed response from a fresh one.
 
-For write operations (create, update, delete), a **`withUserLock`** wrapper sets the user's balance cache status to `processing`, blocking any concurrent write from the same user (checked by `checkResourceLock` middleware) until the operation completes. This prevents race conditions such as double-spending on expense transactions.
+For write operations (create, update, delete, lab bulk delete), the **`acquireUserLock`** middleware atomically sets the user's balance cache status to `processing` (compare-and-set in a synchronous block). Concurrent writes from the same user receive **`409`** until the in-flight request completes. The lock is released on `res.finish` or `res.close` (client disconnect), so early validation failures and aborted requests do not leave the user stuck. This prevents race conditions such as double-spending on expense transactions.
 
 ### 🔄 State-Aware Idempotency Logic
 
@@ -161,8 +161,7 @@ An in-memory `balanceCache` is maintained as a **write-through cache**. Each ent
 
 - On every successful transaction write, `updateCacheBalance` adjusts the cached balance
 - On a **cache miss** (eviction after 24h idle, server restart, or first write), `ensureBalanceCache` runs a MongoDB aggregation (`income − expense`) before any balance check or delta — on **POST, PATCH, and DELETE**
-- The cache also doubles as the concurrency lock store (via the `status` field)
-- Low-level helpers live in `src/utilis/balanceCache.js`; the controller binds `balanceCache`, `transactionModel`, and `mongoose` and injects wrapped functions into services
+- The cache also doubles as the concurrency lock store (via the `status` field); acquire/release helpers live in `src/utilis/balanceCache.js`, middleware in `src/middleware/acquireUserLock.js`
 
 This removes redundant `$group` aggregation on every write while keeping the cached value consistent with the database after eviction. See [`decision.md`](./decision.md) for full rationale.
 

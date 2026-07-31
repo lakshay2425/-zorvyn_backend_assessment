@@ -13,6 +13,7 @@ For the live API contract, see [`API.md`](./API.md).
 3. [Cache rebuild on miss (all write paths)](#3-cache-rebuild-on-miss-all-write-paths)
 4. [Cache entry shape and eviction](#4-cache-entry-shape-and-eviction)
 5. [Dependency injection for cache helpers](#5-dependency-injection-for-cache-helpers)
+6. [Bulk lab transaction cleanup](#6-bulk-lab-transaction-cleanup)
 
 ---
 
@@ -75,10 +76,10 @@ Maintain an in-memory **`balanceCache`** keyed by `userId`:
 Behaviour:
 
 - **Write-through:** after a successful DB write, `updateCacheBalance` adjusts `balance` immediately.
-- **Concurrency lock:** `status: "processing"` blocks concurrent writes via `checkResourceLock` middleware (`409`).
-- **Lock release:** `withUserLock` sets `status` back to `"idle"` in a `finally` block.
+- **Concurrency lock:** `acquireUserLock` middleware atomically sets `status: "processing"` via synchronous compare-and-set (`tryAcquireUserLock` in `balanceCache.js`). Concurrent writes receive `409`.
+- **Lock release:** middleware registers release on `res.finish` and `res.close` (`releaseUserLock` sets `status` back to `"idle"`).
 
-Implementation lives in `src/utilis/balanceCache.js`; the cache object itself is owned by `src/controllers/transactions.js`.
+Implementation lives in `src/utilis/balanceCache.js` (helpers) and `src/middleware/acquireUserLock.js`; the cache object itself is owned by `src/controllers/transactions.js`.
 
 ### Rationale
 
@@ -102,13 +103,14 @@ Originally, a full MongoDB aggregation (rebuild from DB) ran only on **POST expe
 
 ### Decision
 
-Extract **`ensureBalanceCache`** and call it on **every transaction write path** before lock / balance mutation:
+Extract **`ensureBalanceCache`** and call it on **every transaction write path** after middleware acquire / before balance mutation:
 
 | Operation | When `ensureBalanceCache` runs |
 |---|---|
-| POST (create) | Before balance check and `processing` status |
-| PATCH (update) | Before `processing` status |
-| DELETE | Before `processing` status |
+| POST (create) | After middleware acquire; before balance check |
+| PATCH (update) | After middleware acquire |
+| DELETE | After middleware acquire |
+| DELETE `/lab` (bulk) | After middleware acquire |
 
 `updateCacheBalance` also calls `ensureBalanceCache` internally so any balance adjustment self-heals on miss.
 
@@ -192,6 +194,54 @@ Cache utilities need `balanceCache`, `transactionModel`, and `mongoose`. Service
 | Pass six arguments from every service call site | Noisy; binding at the controller is cleaner |
 
 ---
+
+## 6. Bulk lab transaction cleanup
+
+### Context
+
+The frontend **Labs** section (see [`FRONTEND_LABS.md`](./FRONTEND_LABS.md)) creates many demo transactions via idempotency and concurrency exercises. Users need a way to reset lab clutter without deleting real transactions. Looping `DELETE /api/transactions/:id` per row is slow, hits rate limits, and contends with the per-user write lock.
+
+### Decision
+
+Add **`DELETE /api/transactions/lab`** — a scoped bulk soft-delete for the authenticated user only.
+
+**Matching categories** (single source of truth in `src/constants/labCategories.js`):
+
+| Category | Origin |
+|---|---|
+| `Idempotency Lab` | Idempotency Lab creates |
+| `Concurrency Lab` | Concurrency Lab expense creates |
+| `Concurrency Lab Seed` | Optional demo income before Concurrency Lab runs |
+
+Behaviour:
+
+1. `acquireUserLock` → same `409` model as other writes.
+2. `ensureBalanceCache` → DB bulk soft-delete → force cache rebuild (preserve `processing` until response completes).
+3. `updateMany` soft-delete: `{ userId, deletedAt: null, category: { $in: LAB_CATEGORIES } }`.
+4. **Force cache rebuild:** `delete balanceCache[userId]` then `ensureBalanceCache(userId)` — do not loop `updateCacheBalance` per row.
+5. Return `{ deletedCount, balance }`; `deletedCount: 0` is still `200` (idempotent).
+
+Route **must** be registered before `DELETE /:transactionId` so `"lab"` is not parsed as an ObjectId.
+
+### Rationale
+
+- **Scoped, not “delete all”:** real user categories are never touched.
+- **Category allowlist (v1):** no schema migration; lab UIs must use the exact category strings above.
+- **Full cache rebuild after bulk delete:** avoids drift from many incremental deltas and reuses the existing aggregation in `ensureBalanceCache`.
+
+### Alternatives considered
+
+| Option | Why not chosen |
+|---|---|
+| Delete all transactions | Too destructive; one misclick wipes real data |
+| Frontend loops single DELETE | Many requests, lock/rate-limit friction |
+| Lab categories only (exclude seed income) | Leaves demo income behind after cleanup; poor reset UX |
+| Add `source: "lab"` schema field | Heavier change; deferred until category matching becomes fragile |
+
+### Consequences
+
+- Frontend **Concurrency Lab** “Add demo income” must use category **`Concurrency Lab Seed`** exactly.
+- [`API.md`](./API.md) documents the new endpoint; [`FRONTEND_LABS.md`](./FRONTEND_LABS.md) adds a “Clear lab data” action calling it.
 
 ---
 

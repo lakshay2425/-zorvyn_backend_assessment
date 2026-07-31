@@ -190,7 +190,9 @@ Frontend should handle both `{ message }` and `{ error }` error bodies.
 
 ### Resource lock (`409`)
 
-Applies to **POST /transactions**, **PATCH /transactions/:id**, **DELETE /transactions/:id** when another write for the same user is in progress.
+Applies to **POST /transactions**, **PATCH /transactions/:id**, **DELETE /transactions/:id**, and **DELETE /transactions/lab** when another write for the same user is in progress.
+
+The server acquires the lock atomically at middleware entry (`acquireUserLock`): if the user's cache status is already `processing`, the request is rejected immediately with `409`. Otherwise status is set to `processing` synchronously and released when the HTTP response finishes (`res.finish`) or the connection closes (`res.close`).
 
 ```json
 {
@@ -686,6 +688,76 @@ No transaction payload is returned.
 
 ---
 
+### 7.5 `DELETE /api/transactions/lab`
+
+Bulk soft-delete all **lab demo** transactions for the authenticated user. Real transactions (any other category) are never affected.
+
+| Item | Value |
+|---|---|
+| Auth | Required |
+| Rate limited | Yes |
+| Ownership | Scoped to authenticated `userId` only |
+| Lock check | Yes |
+| Request body | None |
+
+#### Categories deleted
+
+Only active rows (`deletedAt: null`) whose `category` is one of:
+
+| Category | Typical source |
+|---|---|
+| `Idempotency Lab` | Idempotency Lab |
+| `Concurrency Lab` | Concurrency Lab |
+| `Concurrency Lab Seed` | Demo income before Concurrency Lab |
+
+Defined in `src/constants/labCategories.js`.
+
+#### Success `200` (transactions deleted)
+
+```json
+{
+  "success": true,
+  "message": "Lab transactions deleted successfully",
+  "data": {
+    "deletedCount": 12,
+    "balance": 1500
+  }
+}
+```
+
+#### Success `200` (nothing to delete)
+
+Idempotent — not an error:
+
+```json
+{
+  "success": true,
+  "message": "No lab transactions to delete",
+  "data": {
+    "deletedCount": 0,
+    "balance": 1500
+  }
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `data.deletedCount` | Number of rows soft-deleted in this request |
+| `data.balance` | User net balance after cleanup (income − expense, active rows only) |
+
+#### Failures
+
+| Status | Body | When | Frontend action |
+|---|---|---|---|
+| `400` / `401` | Auth errors | Cookie issues | Login |
+| `409` | Lock held | Concurrent write | Wait + retry |
+| `429` | Rate limited | Too many calls | Retry later |
+| `500` | e.g. `Failed to delete lab transactions` | Unexpected | Error toast |
+
+**Frontend action:** show confirmation before calling; on success refresh transaction list and analytics.
+
+---
+
 ## 8. Analytics
 
 ### 8.1 `GET /api/analytics`
@@ -794,6 +866,7 @@ Use this when wiring the client so nothing is missed.
 | `POST` | `/api/transactions` | Create (idempotent) |
 | `PATCH` | `/api/transactions/:transactionId` | Update owned txn |
 | `DELETE` | `/api/transactions/:transactionId` | Soft-delete owned txn |
+| `DELETE` | `/api/transactions/lab` | Bulk soft-delete lab demo txns |
 | `GET` | `/api/analytics` | Totals + category breakdown |
 
 ### Out of scope on this backend

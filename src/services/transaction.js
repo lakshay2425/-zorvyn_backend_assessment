@@ -20,39 +20,20 @@ export const getUserTransactionsService = async (input, dependencies) => {
 
 export const createTransactionService = async (input, dependencies) => {
     const { userId, amount, type, date, category, description, idempotencyKey } = input;
-    const { dbOperation, withUserLock, transactionModel, mongoose, balanceCache, updateCacheBalance } = dependencies;
+    const { withUserLock, transactionModel, balanceCache, ensureBalanceCache, updateCacheBalance } = dependencies;
 
-    if (type === "expense") {
-        const cachedEntry = balanceCache[userId];
-        if (cachedEntry) {
-            if (cachedEntry.balance < amount) {
-                return {
-                    success: false,
-                    message: "Insufficient balance for this expense transaction",
-                    errorType: 400
-                };
-            }
-            balanceCache[userId].status = "processing";
-            balanceCache[userId].lastUpdatedAt = Date.now();
-        } else {
-            const userBalance = await transactionModel.aggregate([
-                { $match: { userId: new mongoose.Types.ObjectId(userId), deletedAt: null } },
-                { $group: { _id: "$type", totalAmount: { $sum: "$amount" } } }
-            ]);
-            const income = userBalance.find(b => b._id === "income")?.totalAmount ?? 0;
-            const expense = userBalance.find(b => b._id === "expense")?.totalAmount ?? 0;
-            const currentBalance = income - expense;
-            if (currentBalance < amount) {
-                balanceCache[userId] = { balance: currentBalance, status: "idle", lastUpdatedAt: Date.now() };
-                return {
-                    success: false,
-                    message: "Insufficient balance for this expense transaction",
-                    errorType: 400
-                };
-            }
-            balanceCache[userId] = { balance: currentBalance, status: "processing", lastUpdatedAt: Date.now() };
-        }
+    await ensureBalanceCache(userId);
+
+    if (type === "expense" && balanceCache[userId].balance < amount) {
+        return {
+            success: false,
+            message: "Insufficient balance for this expense transaction",
+            errorType: 400
+        };
     }
+
+    balanceCache[userId].status = "processing";
+    balanceCache[userId].lastUpdatedAt = Date.now();
 
     let transaction;
     try {
@@ -109,9 +90,9 @@ export const createTransactionService = async (input, dependencies) => {
 
 export const updateTransactionService = async (input, dependencies) => {
     const { userId, transaction, payload } = input;
-    const { dbOperation, withUserLock, transactionModel, balanceCache, updateCacheBalance } = dependencies;
+    const { dbOperation, withUserLock, transactionModel, balanceCache, ensureBalanceCache, updateCacheBalance } = dependencies;
 
-    balanceCache[userId] ||= { balance: 0, status: "idle", lastUpdatedAt: Date.now() };
+    await ensureBalanceCache(userId);
     balanceCache[userId].status = "processing";
     balanceCache[userId].lastUpdatedAt = Date.now();
 
@@ -160,7 +141,7 @@ export const updateTransactionService = async (input, dependencies) => {
 
 export const deleteTransactionService = async (input, dependencies) => {
     const { transaction } = input;
-    const { dbOperation, withUserLock, transactionModel, balanceCache, updateCacheBalance } = dependencies;
+    const { dbOperation, withUserLock, transactionModel, balanceCache, ensureBalanceCache, updateCacheBalance } = dependencies;
 
     if (transaction.deletedAt !== null) {
         return {
@@ -171,6 +152,10 @@ export const deleteTransactionService = async (input, dependencies) => {
     }
 
     const userId = transaction.userId;
+    await ensureBalanceCache(userId);
+    balanceCache[userId].status = "processing";
+    balanceCache[userId].lastUpdatedAt = Date.now();
+
     await withUserLock(userId, balanceCache, async () => {
         await dbOperation(
             () => transactionModel.findOneAndUpdate(

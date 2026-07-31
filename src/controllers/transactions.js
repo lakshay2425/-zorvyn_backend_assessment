@@ -5,8 +5,15 @@ import { returnResponse } from '../utilis/returnResponse.js';
 import createHttpError from 'http-errors';
 import mongoose from 'mongoose';
 import { createTransactionService, deleteTransactionService, getUserTransactionsService, updateTransactionService } from '../services/transaction.js';
+import { ensureBalanceCache as ensureBalanceCacheFn, updateCacheBalance as updateCacheBalanceFn } from '../utilis/balanceCache.js';
 
 export const balanceCache = {} // Structure: { userId: { balance: Number, status: "processing" | "idle", lastUpdatedAt: Number } }
+
+const ensureBalanceCache = (userId) =>
+    ensureBalanceCacheFn(userId, balanceCache, transactionModel, mongoose);
+
+const updateCacheBalance = (userId, amount, type) =>
+    updateCacheBalanceFn(userId, amount, type, balanceCache, transactionModel, mongoose);
 
 export const getUserTransactions = async (req, res, next) => {
     try {
@@ -77,8 +84,8 @@ export const createTransaction = async (req, res, next) => {
                 dbOperation,
                 withUserLock,
                 transactionModel,
-                mongoose,
                 balanceCache,
+                ensureBalanceCache,
                 updateCacheBalance
             }
         );
@@ -112,6 +119,7 @@ export const deleteTransaction = async (req, res, next) => {
                 withUserLock,
                 transactionModel,
                 balanceCache,
+                ensureBalanceCache,
                 updateCacheBalance
             }
         );
@@ -144,6 +152,7 @@ export const updateTransaction = async (req, res, next) => {
                 withUserLock,
                 transactionModel,
                 balanceCache,
+                ensureBalanceCache,
                 updateCacheBalance
             }
         );
@@ -156,14 +165,4 @@ export const updateTransaction = async (req, res, next) => {
     } catch (error) {
         next(error);
     }
-}
-
-const updateCacheBalance = async (userId, amount, type) => {
-    balanceCache[userId] ||= { balance: 0, status: "idle", lastUpdatedAt: Date.now() };
-    if (type === "expense") {
-        balanceCache[userId]["balance"] = (balanceCache[userId]?.balance ?? 0) - amount;
-    } else if (type === "income") {
-        balanceCache[userId]["balance"] = (balanceCache[userId]?.balance ?? 0) + amount;
-    }
-    balanceCache[userId].lastUpdatedAt = Date.now();
 }

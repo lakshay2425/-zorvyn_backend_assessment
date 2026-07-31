@@ -68,6 +68,7 @@ Maintain an in-memory **`balanceCache`** keyed by `userId`:
   [userId]: {
     balance: Number,              // net balance: total income − total expense
     status: "idle" | "processing",
+    processingIdempotencyKey: string | null, // in-flight create key (POST only)
     lastUpdatedAt: Number         // Unix ms from Date.now()
   }
 }
@@ -76,8 +77,9 @@ Maintain an in-memory **`balanceCache`** keyed by `userId`:
 Behaviour:
 
 - **Write-through:** after a successful DB write, `updateCacheBalance` adjusts `balance` immediately.
-- **Concurrency lock:** `acquireUserLock` middleware atomically sets `status: "processing"` via synchronous compare-and-set (`tryAcquireUserLock` in `balanceCache.js`). Concurrent writes receive `409`.
-- **Lock release:** middleware registers release on `res.finish` and `res.close` (`releaseUserLock` sets `status` back to `"idle"`).
+- **Concurrency lock:** `acquireUserLock` middleware atomically sets `status: "processing"` via `tryAcquireUserLock` in `balanceCache.js`. Concurrent writes with a **different** (or missing) idempotency key receive `409`.
+- **Same-key pass-through:** if the lock is held and the incoming `X-Idempotency-Key` equals `processingIdempotencyKey`, the request is allowed through without taking ownership. Create-path `findOne` / unique-index (`11000`) handling returns idempotent replay. Pass-through requests do **not** register lock release.
+- **Lock release:** only the lock owner registers release on `res.finish` and `res.close` (`releaseUserLock` sets `status` back to `"idle"` and clears `processingIdempotencyKey`).
 
 Implementation lives in `src/utilis/balanceCache.js` (helpers) and `src/middleware/acquireUserLock.js`; the cache object itself is owned by `src/controllers/transactions.js`.
 

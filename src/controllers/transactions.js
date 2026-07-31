@@ -8,7 +8,7 @@ import { LAB_CATEGORIES } from '../constants/labCategories.js';
 import { createTransactionService, deleteLabTransactionsService, deleteTransactionService, getUserTransactionsService, updateTransactionService } from '../services/transaction.js';
 import { ensureBalanceCache as ensureBalanceCacheFn, updateCacheBalance as updateCacheBalanceFn } from '../utilis/balanceCache.js';
 
-export const balanceCache = {} // Structure: { userId: { balance: Number, status: "processing" | "idle", lastUpdatedAt: Number } }
+export const balanceCache = {} // Structure: { userId: { balance: Number, status: "processing" | "idle", processingIdempotencyKey: string | null, lastUpdatedAt: Number } }
 
 const ensureBalanceCache = (userId) =>
     ensureBalanceCacheFn(userId, balanceCache, transactionModel, mongoose);

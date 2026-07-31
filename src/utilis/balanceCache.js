@@ -1,25 +1,39 @@
-export function tryAcquireUserLock(userId, balanceCache) {
+/**
+ * @returns {"acquired" | "same_key" | "busy"}
+ */
+export function tryAcquireUserLock(userId, balanceCache, idempotencyKey = null) {
     const entry = balanceCache[userId];
+
     if (entry?.status === "processing") {
-        return false;
+        if (
+            idempotencyKey &&
+            entry.processingIdempotencyKey &&
+            entry.processingIdempotencyKey === idempotencyKey
+        ) {
+            return "same_key";
+        }
+        return "busy";
     }
 
     if (entry) {
         entry.status = "processing";
+        entry.processingIdempotencyKey = idempotencyKey;
         entry.lastUpdatedAt = Date.now();
     } else {
         balanceCache[userId] = {
             status: "processing",
+            processingIdempotencyKey: idempotencyKey,
             lastUpdatedAt: Date.now(),
         };
     }
 
-    return true;
+    return "acquired";
 }
 
 export function releaseUserLock(userId, balanceCache) {
     if (balanceCache[userId]) {
         balanceCache[userId].status = "idle";
+        balanceCache[userId].processingIdempotencyKey = null;
     }
 }
 
@@ -39,6 +53,7 @@ export const ensureBalanceCache = async (userId, balanceCache, transactionModel,
     balanceCache[userId] = {
         balance: income - expense,
         status: existing?.status ?? "idle",
+        processingIdempotencyKey: existing?.processingIdempotencyKey ?? null,
         lastUpdatedAt: Date.now(),
     };
 

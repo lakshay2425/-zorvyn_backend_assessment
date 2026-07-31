@@ -184,6 +184,8 @@ async function apiPostTransaction(payload, idempotencyKey) {
 Fire **N** create requests **in parallel** with the **same** `X-Idempotency-Key`.  
 Show that only one transaction is created; the rest return the same record with replay header.
 
+The API lock is **idempotency-key aware**: parallel same-key creates are allowed past the per-user mutex (same-key pass-through). Expect **`201` + replays (`200` + `Idempotency-Replay`)**, not a burst of **`409`** lock conflicts. (`409` is for the Concurrency Lab, which uses **different** keys.)
+
 ### Controls
 
 | Control | Type | Range / default |

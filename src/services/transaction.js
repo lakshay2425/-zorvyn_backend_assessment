@@ -153,10 +153,12 @@ export const deleteLabTransactionsService = async (input, dependencies) => {
     deletedCount = result.modifiedCount;
 
     const lockStatus = balanceCache[userId]?.status;
+    const processingIdempotencyKey = balanceCache[userId]?.processingIdempotencyKey ?? null;
     delete balanceCache[userId];
     await ensureBalanceCache(userId);
     if (lockStatus === "processing") {
         balanceCache[userId].status = "processing";
+        balanceCache[userId].processingIdempotencyKey = processingIdempotencyKey;
     }
 
     const balance = balanceCache[userId]?.balance ?? 0;

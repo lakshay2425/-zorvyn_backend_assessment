@@ -192,7 +192,11 @@ Frontend should handle both `{ message }` and `{ error }` error bodies.
 
 Applies to **POST /transactions**, **PATCH /transactions/:id**, **DELETE /transactions/:id**, and **DELETE /transactions/lab** when another write for the same user is in progress.
 
-The server acquires the lock atomically at middleware entry (`acquireUserLock`): if the user's cache status is already `processing`, the request is rejected immediately with `409`. Otherwise status is set to `processing` synchronously and released when the HTTP response finishes (`res.finish`) or the connection closes (`res.close`).
+The server acquires the lock atomically at middleware entry (`acquireUserLock`):
+
+- If the user's cache status is already `processing` and the incoming write is a **different** operation / idempotency key → reject with `409`.
+- If `POST /transactions` arrives with the **same** `X-Idempotency-Key` as the in-flight create → allow through (same-key pass-through). Idempotency lookup / unique-index race in the create path returns `200` + `Idempotency-Replay: true`. Pass-through requests do not own or release the lock.
+- Otherwise status is set to `processing` (and `processingIdempotencyKey` is stored for creates) and released when the owner's HTTP response finishes (`res.finish`) or the connection closes (`res.close`).
 
 ```json
 {
@@ -201,7 +205,7 @@ The server acquires the lock atomically at middleware entry (`acquireUserLock`):
 }
 ```
 
-**Frontend action:** wait ~300–1000ms and retry the same request. For creates, keep the same `X-Idempotency-Key`.
+**Frontend action:** wait ~300–1000ms and retry the same request. For creates, keep the same `X-Idempotency-Key` (same-key retries during an in-flight create should get a replay, not `409`).
 
 ---
 

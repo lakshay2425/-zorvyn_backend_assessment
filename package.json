@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "node --watch --env-file=.env.development server.js",
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node --env-file=.env.production server.js"
+    "start": "node server.js"
   },
   "keywords": [],
   "author": "",

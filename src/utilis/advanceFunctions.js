@@ -24,14 +24,3 @@ export const serviceOperation = async (operation, errorMessage) => {
         throw createError(errorMessage, 500);
     }
 };
-
-//Release user lock
-export const withUserLock = async (userId, balanceCache, operation) => {
-    try {
-        return await operation();
-    } finally {
-        if (balanceCache[userId]) {
-            balanceCache[userId].status = 'idle';
-        }
-    }
-};

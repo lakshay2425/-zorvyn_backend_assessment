@@ -1,10 +1,11 @@
 import { transactionModel } from '../schema/transaction.js';
-import { dbOperation, withUserLock } from '../utilis/advanceFunctions.js';
+import { dbOperation } from '../utilis/advanceFunctions.js';
 import { transactionSchema, updateTransactionSchema, idempotencyHeaderSchema, getTransactionsQuerySchema } from '../validationSchemas/transaction.js';
 import { returnResponse } from '../utilis/returnResponse.js';
 import createHttpError from 'http-errors';
 import mongoose from 'mongoose';
-import { createTransactionService, deleteTransactionService, getUserTransactionsService, updateTransactionService } from '../services/transaction.js';
+import { LAB_CATEGORIES } from '../constants/labCategories.js';
+import { createTransactionService, deleteLabTransactionsService, deleteTransactionService, getUserTransactionsService, updateTransactionService } from '../services/transaction.js';
 import { ensureBalanceCache as ensureBalanceCacheFn, updateCacheBalance as updateCacheBalanceFn } from '../utilis/balanceCache.js';
 
 export const balanceCache = {} // Structure: { userId: { balance: Number, status: "processing" | "idle", lastUpdatedAt: Number } }
@@ -82,7 +83,6 @@ export const createTransaction = async (req, res, next) => {
             },
             {
                 dbOperation,
-                withUserLock,
                 transactionModel,
                 balanceCache,
                 ensureBalanceCache,
@@ -110,13 +110,36 @@ export const createTransaction = async (req, res, next) => {
     }
 };
 
+export const deleteLabTransactions = async (req, res, next) => {
+    try {
+        const userId = req.user.userId;
+
+        const transactionInfo = await deleteLabTransactionsService(
+            { userId, labCategories: LAB_CATEGORIES },
+            {
+                dbOperation,
+                transactionModel,
+                balanceCache,
+                ensureBalanceCache,
+            }
+        );
+
+        if (!transactionInfo.success) {
+            return next(createHttpError(transactionInfo.errorType || 500, transactionInfo.message));
+        }
+
+        returnResponse(transactionInfo.message, res, 200, transactionInfo.data);
+    } catch (error) {
+        next(error);
+    }
+};
+
 export const deleteTransaction = async (req, res, next) => {
     try {
         const transactionInfo = await deleteTransactionService(
             { transaction: req.transaction },
             {
                 dbOperation,
-                withUserLock,
                 transactionModel,
                 balanceCache,
                 ensureBalanceCache,
@@ -149,7 +172,6 @@ export const updateTransaction = async (req, res, next) => {
             },
             {
                 dbOperation,
-                withUserLock,
                 transactionModel,
                 balanceCache,
                 ensureBalanceCache,

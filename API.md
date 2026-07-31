@@ -2,6 +2,8 @@
 
 Use this document to build and integrate a React frontend against the evolved backend.
 
+**Design rationale:** see [`decision.md`](./decision.md) for architecture and breaking-change notes.
+
 **Base URL:** `{API_ORIGIN}/api`  
 **Health (no `/api` prefix):** `{API_ORIGIN}/health`
 
@@ -206,7 +208,7 @@ Applies to **POST /transactions**, **PATCH /transactions/:id**, **DELETE /transa
 ```
 1. User authenticates via auth service → cookie `token` is set
 2. GET /api/users/check
-3. If exists === false → POST /api/users/profile  (optional { name })
+3. If exists === false → POST /api/users/profile  (required body: `{ "name": "..." }`)
 4. Load app data in parallel:
      - GET /api/analytics
      - GET /api/transactions
@@ -310,7 +312,7 @@ Create the shadow user profile for the authenticated user.
 
 | Field | Type | Required | Rules |
 |---|---|---|---|
-| `name` | `string` | No | If present: trimmed, min length 1. If omitted/`undefined`, profile is created without `name`. |
+| `name` | `string` | **Yes** | Trimmed, min length 1. Must be present in the request body. |
 
 **Not accepted from client (server defaults):**
 
@@ -337,13 +339,14 @@ Create the shadow user profile for the authenticated user.
 }
 ```
 
-If `name` was omitted, `name` may be absent/`undefined` on the document.
+Every created profile includes `name` (validated at the API layer and required in the database schema).
 
 #### Failures
 
 | Status | Body | When | Frontend action |
 |---|---|---|---|
-| `400` | `{ "message": "Invalid data", "errStack": "" }` | `name` present but empty/invalid | Fix form input |
+| `400` | `{ "message": "Invalid data", "errStack": "" }` | `name` missing, empty, or invalid (Zod) | Collect and send a non-empty name before calling this endpoint |
+| `400` | `{ "message": "Name is required", "errStack": "" }` | Service-layer guard (defense in depth) | Same as above — always send `name` |
 | `400` / `401` | Auth errors | Missing/invalid cookie | Login |
 | `409` | `{ "message": "User profile already exists", "errStack": "" }` | Profile already created | Treat as success; continue to app (or re-call `/users/check`) |
 | `429` | Rate limited | Too many calls | Retry later |
@@ -758,7 +761,7 @@ Use this when wiring the client so nothing is missed.
 
 - [ ] Send `credentials: "include"` on every API call
 - [ ] On `400` with message `No Token is provided` or any `401` → redirect to auth login
-- [ ] After login → `GET /users/check` → maybe `POST /users/profile`
+- [ ] After login → `GET /users/check` → if `exists === false`, `POST /users/profile` with `{ "name": "..." }` (required)
 - [ ] Treat HTTP status as source of truth (do not rely only on `success`)
 - [ ] Handle both error shapes: `{ message }` and `{ error: "Invalid Input" }`
 - [ ] For creates: always send `X-Idempotency-Key`; reuse on uncertain retries
@@ -776,6 +779,7 @@ Use this when wiring the client so nothing is missed.
 | Idempotency replay | Silent success / “already saved” |
 | Already deleted | Remove row from list |
 | Profile already exists (`409`) | Continue into app |
+| Missing / invalid `name` on profile create (`400`) | Block onboarding until user provides a name |
 | Empty transactions / analytics | Empty states, not errors |
 | Network failure after create | Retry same idempotency key; then refresh list |
 

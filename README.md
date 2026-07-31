@@ -3,6 +3,7 @@
 A production-minded **Node.js/Express** REST API for personal income and expense tracking, built with a focus on data integrity and concurrency safety.
 
 > **Current API reference for frontend work:** see [`API.md`](./API.md).  
+> **Architecture & design decisions:** see [`decision.md`](./decision.md).  
 > **Frontend Labs (idempotency + concurrency demos):** see [`FRONTEND_LABS.md`](./FRONTEND_LABS.md).
 
 ---
@@ -38,22 +39,24 @@ It has been evolved into **Personal Income & Expense Tracker v1** with these int
 | Idempotency | In-memory `proccessedTransactionKeys` map | Persisted on each transaction (`idempotencyKey` + unique MongoDB index) |
 | Async errors | Custom `asyncHandler` wrapper | Removed — Express 5 forwards rejected promises natively |
 | Concurrency | In-memory per-user lock via `balanceCache.status` | Unchanged for v1 (single instance); Redis deferred to v2 |
-| Docs | API details embedded in this README | Active API contract lives in [`API.md`](./API.md) |
+| Balance cache | Aggregation on expense cache miss only | `ensureBalanceCache` rebuilds from DB on **any** write-path cache miss (POST/PATCH/DELETE) |
+| Shadow profile | Optional `name` on create | **`name` required** (Zod + service + Mongoose) |
+| Docs | API details embedded in this README | [`API.md`](./API.md) (contract) + [`decision.md`](./decision.md) (rationale) |
 
-Sections below that describe the original assessment design (especially RBAC and local HS256 auth) are kept for historical context. Prefer [`API.md`](./API.md) and the current source tree for implementing the React frontend.
+Sections below that describe the original assessment design (especially RBAC and local HS256 auth) are kept for historical context. Prefer [`API.md`](./API.md), [`decision.md`](./decision.md), and the current source tree for implementing the React frontend.
 
 ---
 
 ## Features
 
 - **External JWT Authentication** — RS256 verification via HttpOnly cookie; public key cached in memory
-- **Shadow User Profiles** — local `users` collection keyed by auth service `sub` (`role: user`, `plan: free`)
+- **Shadow User Profiles** — local `users` collection keyed by auth service `sub`; **`name` is required** on profile create (`role: user`, `plan: free`)
 - **Full Transaction CRUD** with ownership enforcement
 - **Soft Delete** — records are never hard-deleted; `deletedAt` timestamp is set instead
 - **Idempotency** — `X-Idempotency-Key` stored on each transaction with a unique MongoDB index (success-only semantics)
-- **Write-Through Balance Caching** — in-memory cache keeps balance current without redundant aggregation
-- **In-Memory Concurrency Locking** — per-user mutex prevents race conditions on writes
-- **Stale Cache Eviction** — hourly sweep removes `balanceCache` entries older than 24 hours
+- **Write-Through Balance Caching** — `src/utilis/balanceCache.js` keeps balance current; `ensureBalanceCache` rebuilds from MongoDB aggregation on cache miss
+- **In-Memory Concurrency Locking** — per-user mutex via `balanceCache.status` prevents race conditions on writes
+- **Stale Cache Eviction** — hourly sweep removes `balanceCache` entries older than 24 hours (`lastUpdatedAt` stored as Unix ms)
 - **User-Based Rate Limiting** — throttled by `userId`, not IP
 - **Analytics Aggregation** — income/expense totals and category breakdowns via MongoDB `$facet`
 - **Zod Schema Validation** — strict input validation with partial schemas for `PATCH` routes
@@ -84,6 +87,7 @@ Sections below that describe the original assessment design (especially RBAC and
 ├── app.js                        # Express app setup
 ├── server.js                     # Server entry point + balanceCache eviction
 ├── API.md                        # Current API contract (use this for frontend)
+├── decision.md                   # Architecture & design decisions (rationale)
 ├── Docker/
 │   ├── Dockerfile
 │   ├── Dockerfile.dev
@@ -95,7 +99,7 @@ Sections below that describe the original assessment design (especially RBAC and
     ├── routes/                   # Express routers
     ├── schema/                   # Mongoose models (User, Transaction)
     ├── services/                 # Business logic layer
-    ├── utilis/                   # dbOperation, withUserLock, helpers
+    ├── utilis/                   # dbOperation, withUserLock, balanceCache helpers
     └── validationSchemas/        # Zod schemas
 ```
 
@@ -149,13 +153,18 @@ A critical architectural decision was made to implement **Success-Only Idempoten
 
 ### Write-Through Balance Caching
 
-An in-memory `balanceCache` (`{ [userId]: { balance, status } }`) is maintained as a **write-through cache**:
+An in-memory `balanceCache` is maintained as a **write-through cache**. Each entry:
 
-- On every successful transaction write, `updateCacheBalance` immediately adjusts the cached balance
-- On a new expense, the cache is checked first; a full MongoDB aggregation is only triggered on a cache miss
+```js
+{ balance: Number, status: "idle" | "processing", lastUpdatedAt: Number }
+```
+
+- On every successful transaction write, `updateCacheBalance` adjusts the cached balance
+- On a **cache miss** (eviction after 24h idle, server restart, or first write), `ensureBalanceCache` runs a MongoDB aggregation (`income − expense`) before any balance check or delta — on **POST, PATCH, and DELETE**
 - The cache also doubles as the concurrency lock store (via the `status` field)
+- Low-level helpers live in `src/utilis/balanceCache.js`; the controller binds `balanceCache`, `transactionModel`, and `mongoose` and injects wrapped functions into services
 
-This removes the need for a repeated `$group` aggregation on every write while keeping the cached value consistent with the database.
+This removes redundant `$group` aggregation on every write while keeping the cached value consistent with the database after eviction. See [`decision.md`](./decision.md) for full rationale.
 
 ### User-Based Rate Limiting
 
@@ -174,7 +183,7 @@ Transactions are never physically removed. A `deletedAt: Date | null` field on t
 
 - `transactionSchema` uses `z.coerce.date()` to accept ISO strings from JSON bodies and coerce them to `Date` objects
 - `updateTransactionSchema` is derived as `transactionSchema.partial().omit({ type, date })`, enforcing that `type` and `date` are **immutable** after creation at the validation layer itself
-- User email is transformed into `{ original, lowercase }` at parse time, enabling case-insensitive lookups without storing a separate normalised field at query time
+- `createUserProfileSchema` requires a non-empty trimmed `name` on `POST /users/profile`
 
 ---
 
@@ -206,7 +215,9 @@ Private end-user. Can only view the analytics dashboard, and their analytics que
 
 **Current (v1) API contract for frontend implementation:** [`API.md`](./API.md)
 
-That document covers authentication, shadow user routes (`GET /users/check`, `POST /users/profile`), transactions (including idempotency replay behaviour), analytics, error shapes, and the recommended frontend onboarding sequence.
+**Design decisions and breaking-change notes:** [`decision.md`](./decision.md)
+
+`API.md` covers authentication, shadow user routes (`GET /users/check`, `POST /users/profile` with required `name`), transactions (including idempotency replay behaviour), analytics, error shapes, and the recommended frontend onboarding sequence.
 
 The assessment-era endpoint tables that previously lived in this section have been superseded by `API.md`.
 
@@ -218,9 +229,11 @@ The assessment-era endpoint tables that previously lived in this section have be
 
 2. **`date` is immutable** — the transaction date represents when the financial event occurred and cannot be backdated after the fact. Also enforced by `updateTransactionSchema`.
 
-3. **Balance is derived, not stored** — the authoritative balance is always computed from transaction records. The in-memory cache is a performance optimisation, not the source of truth.
+3. **Balance is derived, not stored** — the authoritative balance is always computed from transaction records. The in-memory cache is a performance optimisation, not the source of truth; `ensureBalanceCache` re-aggregates from the database on cache miss.
 
 4. **Expense validation** — the system checks that a user's current balance is sufficient before committing an expense transaction, preventing negative balances.
+
+5. **Profile `name` is required** — shadow profiles must include a display name at creation time (validated by Zod, enforced in the service before DB access, and required in the Mongoose schema).
 
 ---
 

@@ -5,6 +5,7 @@ export const userRateLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
     max: 100, 
     standardHeaders: true,
+    skipFailedRequests: true,
     legacyHeaders: false,
     keyGenerator: (req) => {
         return req.user?.userId; 

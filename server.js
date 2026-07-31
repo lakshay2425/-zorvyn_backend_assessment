@@ -1,5 +1,5 @@
 import { config } from "./src/config/config.js";
-import app from "./app.js"
+import { initializeApp } from "./app.js";
 import { balanceCache } from "./src/controllers/transactions.js";
 
 const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;
@@ -16,12 +16,18 @@ const startBalanceCacheEviction = () => {
     }, ONE_HOUR_MS);
 };
 
-const startServer = () => {
-    const PORT = config.get("PORT");
-    startBalanceCacheEviction();
-    app.listen(PORT, () => {
-        console.log(`Server is running on port ${PORT}`);
-    });
-}
+const startServer = async () => {
+    try {
+        const app = await initializeApp();
+        const PORT = config.get("PORT");
+        startBalanceCacheEviction();
+        app.listen(PORT, () => {
+            console.log(`Server is running on port ${PORT}`);
+        });
+    } catch (error) {
+        console.error("Failed to start server:", error.message);
+        process.exit(1);
+    }
+};
 
 startServer();

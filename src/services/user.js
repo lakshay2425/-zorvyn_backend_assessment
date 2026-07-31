@@ -18,6 +18,14 @@ export const createUserProfileService = async (input, dependencies) => {
     const { userId, name } = input;
     const { dbOperation, userModel } = dependencies;
 
+    if (!name) {
+        return {
+            success: false,
+            status: 400,
+            message: "Name is required"
+        };
+    }
+
     const existingUser = await dbOperation(
         () => userModel.findById(userId).lean(),
         "Failed to find user from database"
@@ -33,13 +41,10 @@ export const createUserProfileService = async (input, dependencies) => {
 
     const userPayload = {
         _id: userId,
+        name,
         role: "user",
         plan: "free"
     };
-
-    if (name !== undefined) {
-        userPayload.name = name;
-    }
 
     const newUser = await dbOperation(
         () => userModel.create(userPayload),

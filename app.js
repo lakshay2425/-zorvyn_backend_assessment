@@ -1,10 +1,18 @@
 import express from 'express';
+import cookieParser from 'cookie-parser';
+import cors from 'cors';
+import { config } from './src/config/config.js';
 import globalErrorHandler from './src/middleware/globalErrorHandler.js';
 import indexRouter from './src/routes/indexRouter.js';
 import { connectToDatabase } from './src/config/mongoose.js';
-import cookieParser from 'cookie-parser';
 
 const app = express();
+const allowedOrigins = [config.get("AUTH_URL"), config.get("FRONTEND_URL")];
+app.use(cors({
+    origin: allowedOrigins,
+    credentials: true,
+    methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+}));
 
 app.use(cookieParser());
 app.use(express.json());

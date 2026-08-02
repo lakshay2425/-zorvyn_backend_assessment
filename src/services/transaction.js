@@ -115,7 +115,7 @@ export const updateTransactionService = async (input, dependencies) => {
         return transactionModel.findOneAndUpdate(
             { _id: transactionId, userId },
             { $set: updateData },
-            { new: true }
+            { returnDocument: 'after' }
         );
     }, "Failed to update the transaction record");
     if (isAmountUpdated) {
@@ -191,7 +191,7 @@ export const deleteTransactionService = async (input, dependencies) => {
         () => transactionModel.findOneAndUpdate(
             { _id: transaction._id, userId },
             { $set: { deletedAt: new Date() } },
-            { new: true }
+            { returnDocument: 'after' }
         ),
         "Failed to delete the transaction record"
     );

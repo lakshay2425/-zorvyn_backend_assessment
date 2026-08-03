@@ -1,10 +1,21 @@
-# Personal Income & Expense Tracker API
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="./public/vaultex_dark.jpg" />
+    <img src="./public/vaultex_light.jpg" alt="Vaultex" width="280" />
+  </picture>
+</p>
 
-A production-minded **Node.js/Express** REST API for personal income and expense tracking, built with a focus on data integrity and concurrency safety.
+<h1 align="center">Vaultex</h1>
 
-> **Current API reference for frontend work:** see [`API.md`](./API.md).  
-> **Architecture & design decisions:** see [`decision.md`](./decision.md).  
-> **Frontend Labs (idempotency + concurrency demos):** see [`FRONTEND_LABS.md`](./FRONTEND_LABS.md).
+<p align="center">
+  Vaultex is a personal income & expense tracker API — a production-minded <strong>Node.js/Express</strong> REST API built for data integrity and concurrency safety.
+</p>
+
+<p align="center">
+  <a href="./API.md"><strong>API.md</strong></a> ·
+  <a href="./decision.md"><strong>decision.md</strong></a> ·
+  <a href="./FRONTEND_LABS.md"><strong>FRONTEND_LABS.md</strong></a>
+</p>
 
 ---
 
@@ -28,9 +39,9 @@ A production-minded **Node.js/Express** REST API for personal income and expense
 
 This repository started as a **backend assessment** focused on concurrency patterns for a multi-role FinTech API (RBAC with `admin` / `analyst` / `viewer`, local JWT login with HS256 + bcrypt, and in-memory idempotency keys).
 
-It has been evolved into **Personal Income & Expense Tracker v1** with these intentional changes:
+It has been evolved into **Vaultex v1** with these intentional changes:
 
-| Area | Assessment (original) | Tracker v1 (current) |
+| Area | Assessment (original) | Vaultex v1 (current) |
 |---|---|---|
 | Product scope | Multi-role financial API | Single-owner personal income/expense tracker |
 | Auth | Local login/signup issuing HS256 JWTs | External auth service; this API verifies **RS256** JWTs from a cookie using JWKS (`jwks-rsa`, issuer `auth-service`) |
@@ -88,6 +99,9 @@ Sections below that describe the original assessment design (especially RBAC and
 ├── server.js                     # Server entry point + balanceCache eviction
 ├── API.md                        # Current API contract (use this for frontend)
 ├── decision.md                   # Architecture & design decisions (rationale)
+├── public/
+│   ├── vaultex_light.jpg         # Brand logo (light theme)
+│   └── vaultex_dark.jpg          # Brand logo (dark theme)
 ├── Docker/
 │   ├── Dockerfile
 │   ├── Dockerfile.dev

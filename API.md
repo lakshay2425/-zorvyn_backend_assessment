@@ -1,4 +1,4 @@
-# Personal Income & Expense Tracker — API Contract (v1)
+# Vaultex — API Contract (v1)
 
 Use this document to build and integrate a React frontend against the evolved backend.
 

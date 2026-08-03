@@ -1,7 +1,7 @@
 {
-  "name": "zorvyn_backend_assessment",
+  "name": "vaultex",
   "version": "1.0.0",
-  "description": "",
+  "description": "Vaultex — Personal Income & Expense Tracker API",
   "main": "server.js",
   "scripts": {
     "dev": "node --watch --env-file=.env.development server.js",

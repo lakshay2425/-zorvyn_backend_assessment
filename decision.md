@@ -1,6 +1,6 @@
 # Architecture & Design Decisions
 
-This document records intentional decisions made during the evolution of **Personal Income & Expense Tracker v1**, including changes from the concurrency and user-profile hardening work.
+This document records intentional decisions made during the evolution of **Vaultex v1**, including changes from the concurrency and user-profile hardening work.
 
 For the live API contract, see [`API.md`](./API.md).
 

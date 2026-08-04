@@ -8,7 +8,7 @@ export const getAnalytics = async (req, res, next) => {
     try {
         const matchQuery = {
             deletedAt: null,
-            userId: new mongoose.Types.ObjectId(req.user.userId)
+            userId: req.user.userId
         };
 
         const analyticsData = await getAnalyticsService(matchQuery, { transactionModel, dbOperation });

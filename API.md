@@ -41,7 +41,7 @@ Authentication is handled by an **external auth service**. This backend only ver
 | Algorithm | `RS256` |
 | Issuer | `auth-service` |
 | JWKS | `https://authentication.lakshaymahajan.com/.well-known/jwks.json` |
-| Identity claim | `sub` — MongoDB ObjectId string |
+| Identity claim | `sub` — opaque string from the auth service (not a MongoDB ObjectId) |
 | Extra claim | `userInfo.userEmail` |
 | Mapped to request | `req.user = { userId: sub, email: userInfo.userEmail }` |
 
@@ -49,8 +49,20 @@ Authentication is handled by an **external auth service**. This backend only ver
 
 - Login / logout / password flows happen on the **auth service**, not this API.
 - After login, the auth service sets the `token` cookie.
-- This API uses `sub` as the shadow user `_id` and as `Transaction.userId`.
+- This API uses `sub` as the shadow user `_id` and as `Transaction.userId` (both stored as **strings**).
 - There are **no login, signup, or logout routes** on this backend.
+
+### Development auth bypass (`BYPASS_AUTH`)
+
+When `NODE_ENV=development` and `BYPASS_AUTH=true`, JWT verification is skipped and every protected request is treated as:
+
+```js
+req.user = { userId: "dev-bypass-user" }
+```
+
+- Only works in development; ignored outside it.
+- Use this for local API/labs work without the auth service cookie.
+- Create a shadow profile for `dev-bypass-user` (via `POST /api/users/profile`) before exercising transaction routes.
 
 ### Auth errors (apply to every protected route)
 
@@ -266,7 +278,7 @@ Check whether the authenticated user already has a shadow profile.
   "message": "User existence checked successfully",
   "exists": true,
   "user": {
-    "_id": "69cfaf4cd681a6a77b076222",
+    "_id": "auth_user_01",
     "name": "Alex",
     "role": "user",
     "plan": "free",
@@ -324,7 +336,7 @@ Create the shadow user profile for the authenticated user.
 
 | Field | Default |
 |---|---|
-| `_id` | JWT `sub` |
+| `_id` | JWT `sub` (opaque string) |
 | `role` | `"user"` |
 | `plan` | `"free"` |
 
@@ -335,7 +347,7 @@ Create the shadow user profile for the authenticated user.
   "success": true,
   "message": "User profile created successfully",
   "user": {
-    "_id": "69cfaf4cd681a6a77b076222",
+    "_id": "auth_user_01",
     "name": "Alex",
     "role": "user",
     "plan": "free",
@@ -374,7 +386,7 @@ All transaction endpoints are scoped to the authenticated user. Soft-deleted row
   "date": "2024-01-15T00:00:00.000Z",
   "category": "Salary",
   "description": "Monthly salary deposit",
-  "userId": "69cfaf4cd681a6a77b076222",
+  "userId": "auth_user_01",
   "idempotencyKey": "8f3c2a1b-4d5e-6f70-8192-a3b4c5d6e7f8",
   "deletedAt": null,
   "createdAt": "2026-07-23T00:00:00.000Z",
@@ -430,7 +442,7 @@ GET /api/transactions?type=income&category=Salary
       "date": "2024-01-15T00:00:00.000Z",
       "category": "Salary",
       "description": "Monthly salary deposit",
-      "userId": "69cfaf4cd681a6a77b076222",
+      "userId": "auth_user_01",
       "idempotencyKey": "8f3c2a1b-4d5e-6f70-8192-a3b4c5d6e7f8",
       "deletedAt": null,
       "createdAt": "2026-07-23T00:00:00.000Z",
@@ -512,7 +524,7 @@ Create a transaction. **Idempotent.**
     "date": "2024-01-15T00:00:00.000Z",
     "category": "Salary",
     "description": "Monthly salary deposit",
-    "userId": "69cfaf4cd681a6a77b076222",
+    "userId": "auth_user_01",
     "idempotencyKey": "8f3c2a1b-4d5e-6f70-8192-a3b4c5d6e7f8",
     "deletedAt": null,
     "createdAt": "2026-07-23T00:00:00.000Z",
@@ -621,7 +633,7 @@ All fields optional, but **at least one mutable field** must be present after va
     "date": "2024-01-15T00:00:00.000Z",
     "category": "Freelance",
     "description": "Updated description",
-    "userId": "69cfaf4cd681a6a77b076222",
+    "userId": "auth_user_01",
     "idempotencyKey": "8f3c2a1b-4d5e-6f70-8192-a3b4c5d6e7f8",
     "deletedAt": null,
     "createdAt": "2026-07-23T00:00:00.000Z",

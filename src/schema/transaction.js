@@ -8,8 +8,7 @@ const transactionSchema = new Schema({
         required: true
     },
     userId: {
-        type: Schema.Types.ObjectId,
-        ref: "User",
+        type: String,
         required: true
     },
     type: {

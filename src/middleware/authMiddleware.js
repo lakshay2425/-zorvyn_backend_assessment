@@ -45,7 +45,7 @@ const verifyAuthStatus = async (req, res, next) => {
 export const optionalAuth = async (req, res, next) => {
     if (environment === "development" && config.get("BYPASS_AUTH") === 'true') {
         req.user = {
-            userId: "69cfaf4cd681a6a77b076222"
+            userId: "dev-bypass-user"
         }
         return next();
     }

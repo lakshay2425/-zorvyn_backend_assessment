@@ -43,7 +43,7 @@ export const ensureBalanceCache = async (userId, balanceCache, transactionModel,
     }
 
     const userBalance = await transactionModel.aggregate([
-        { $match: { userId: new mongoose.Types.ObjectId(userId), deletedAt: null } },
+        { $match: { userId: userId, deletedAt: null } },
         { $group: { _id: "$type", totalAmount: { $sum: "$amount" } } }
     ]);
     const income = userBalance.find(b => b._id === "income")?.totalAmount ?? 0;

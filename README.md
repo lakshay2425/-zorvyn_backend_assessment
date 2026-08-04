@@ -310,12 +310,12 @@ See `.env.sample` for all required variables:
 PORT=           # Port the server listens on (e.g. 3000)
 NODE_ENV=       # 'development' or 'production'
 DB_URI=         # MongoDB connection string
-BYPASS_AUTH=    # Set to 'true' to skip JWT verification in development
+BYPASS_AUTH=    # Set to 'true' to skip JWT verification in development (`req.user.userId` = `dev-bypass-user`)
 ```
 
-> **Security note:** `BYPASS_AUTH` is only respected when `NODE_ENV=development`. It should never be set to `true` in production.
+> **Security note:** `BYPASS_AUTH` is only respected when `NODE_ENV=development`. It should never be set to `true` in production. When enabled, requests are attributed to the fixed string id `dev-bypass-user` (not a MongoDB ObjectId).
 
-> **Auth note (v1):** JWT verification uses RS256 against the auth service JWKS endpoint via `jwks-rsa` (`src/utilis/jwt.js`). There is no local `JWT_SECRET` in this service anymore.
+> **Auth note (v1):** JWT verification uses RS256 against the auth service JWKS endpoint via `jwks-rsa` (`src/utilis/jwt.js`). Auth `sub` / `userId` values are opaque **strings** (shadow `User._id` and `Transaction.userId`). There is no local `JWT_SECRET` in this service anymore.
 
 ---
 

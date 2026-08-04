@@ -3,7 +3,7 @@ export const checkUserExistsService = async (input, dependencies) => {
     const { dbOperation, userModel } = dependencies;
 
     const user = await dbOperation(
-        () => userModel.findById(userId).lean(),
+        () => userModel.findOne({ _id: userId }).lean(),
         "Failed to find user from database"
     );
 
@@ -27,7 +27,7 @@ export const createUserProfileService = async (input, dependencies) => {
     }
 
     const existingUser = await dbOperation(
-        () => userModel.findById(userId).lean(),
+        () => userModel.findOne({ _id: userId }).lean(),
         "Failed to find user from database"
     );
 

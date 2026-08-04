@@ -3,7 +3,7 @@ const { Schema, model, models } = pkg
 
 const userSchema = new Schema({
     _id: {
-        type: Schema.Types.ObjectId,
+        type: String,
         required: true
     },
     name: {

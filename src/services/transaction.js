@@ -35,15 +35,19 @@ export const createTransactionService = async (input, dependencies) => {
     let transaction;
     try {
         try {
-            transaction = await transactionModel.create({
+            const transactionDoc = {
                 amount,
                 type,
                 date,
                 category,
-                description,
                 userId,
                 idempotencyKey
-            });
+            };
+            if (description !== undefined) {
+                transactionDoc.description = description;
+            }
+
+            transaction = await transactionModel.create(transactionDoc);
         } catch (error) {
             if (error?.code === 11000) {
                 const existing = await transactionModel.findOne({ idempotencyKey }).lean();

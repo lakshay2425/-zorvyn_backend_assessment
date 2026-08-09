@@ -25,8 +25,7 @@ const transactionSchema = new Schema({
         required: true
     },
     description: {
-        type: String,
-        required: true
+        type: String
     },
     idempotencyKey: {
         type: String,

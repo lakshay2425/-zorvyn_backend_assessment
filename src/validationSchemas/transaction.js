@@ -15,10 +15,14 @@ export const transactionSchema = z.object({
     .min(1, "Category is required")
     .max(50, "Category name is too long"),
     
-  description: z.string()
-    .trim()
-    .min(1, "Description is required")
-    .max(500, "Description is too long"), 
+  description: z.preprocess(
+    (val) => (val === null || val === "" ? undefined : val),
+    z.string()
+      .trim()
+      .min(1, "Description cannot be empty")
+      .max(500, "Description is too long")
+      .optional()
+  ),
 });
 
 export const updateTransactionSchema = transactionSchema.partial().omit({ 

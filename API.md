@@ -508,7 +508,7 @@ Create a transaction. **Idempotent.**
 | `type` | `string` | Yes | `"income"` or `"expense"` only |
 | `date` | ISO date string | Yes | Coerced to `Date`; **cannot be in the future** |
 | `category` | `string` | Yes | Trimmed, 1–50 chars |
-| `description` | `string` | Yes | Trimmed, 1–500 chars |
+| `description` | `string` | **No** | Optional. Omit, `null`, or `""` are treated as absent. When provided: trimmed, 1–500 chars |
 
 #### Success `201` — fresh create
 
@@ -615,7 +615,7 @@ All fields optional, but **at least one mutable field** must be present after va
 |---|---|---|
 | `amount` | Yes | Same as create: `> 0`, max `1000000000` |
 | `category` | Yes | Trimmed, 1–50 chars |
-| `description` | Yes | Trimmed, 1–500 chars |
+| `description` | Yes | Optional field. When provided: trimmed, 1–500 chars. Omit / `null` / `""` are ignored (no update) |
 | `type` | **No** | Rejected by schema → `400 Invalid data` |
 | `date` | **No** | Rejected by schema → `400 Invalid data` |
 

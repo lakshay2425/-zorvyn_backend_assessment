@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 export const transactionSchema = z.object({
-  amount: z.number()
+  amount: z.coerce.number()
     .positive("Amount must be greater than zero")
     .max(1000000000, "Amount exceeds maximum limit"), 
     

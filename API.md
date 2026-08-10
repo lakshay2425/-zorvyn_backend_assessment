@@ -504,7 +504,7 @@ Create a transaction. **Idempotent.**
 
 | Field | Type | Required | Rules |
 |---|---|---|---|
-| `amount` | `number` | Yes | `> 0`, max `1000000000` (must be a JSON number, not a string) |
+| `amount` | `number` | Yes | `> 0`, max `1000000000`. Coerced from string if needed (e.g. `"12"` → `12`) |
 | `type` | `string` | Yes | `"income"` or `"expense"` only |
 | `date` | ISO date string | Yes | Coerced to `Date`; **cannot be in the future** |
 | `category` | `string` | Yes | Trimmed, 1–50 chars |
@@ -857,7 +857,7 @@ Use this when wiring the client so nothing is missed.
 - [ ] On `409` lock → brief wait + retry
 - [ ] On `429` → backoff / retry later
 - [ ] Never send `type` or `date` on PATCH
-- [ ] Send `amount` as a JSON number, not `"1500"`
+- [ ] Send `amount` as a number or numeric string (backend coerces `"12"` → `12`)
 
 ### Recommended UX mappings
 

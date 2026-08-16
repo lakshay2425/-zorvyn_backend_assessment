@@ -71,6 +71,8 @@ export const createTransaction = async (req, res, next) => {
 
         const validatedData = transactionSchema.safeParse(req.body);
         if (!validatedData.success) {
+            console.error(validatedData.error.format());
+            console.error("Validation errors:", validatedData.error.errors);
             return next(createHttpError(400, "Invalid data"));
         }
 

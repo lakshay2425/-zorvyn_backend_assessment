@@ -3,18 +3,23 @@ import { z } from 'zod';
 export const transactionSchema = z.object({
   amount: z.coerce.number()
     .positive("Amount must be greater than zero")
-    .max(1000000000, "Amount exceeds maximum limit"), 
-    
+    .max(1000000000, "Amount exceeds maximum limit"),
+
   type: z.enum(["income", "expense"]),
-  
-  date: z.coerce.date()
-    .max(new Date(), "Date cannot be in the future"), 
-    
+
+  date: z.coerce.date().refine(
+    (date) => {
+      const now = new Date();
+      now.setHours(23, 59, 59, 999); // allow any time on today's date
+      return date <= now;
+    },
+    { message: "Date cannot be in the future" }
+  ),
   category: z.string()
-    .trim() 
+    .trim()
     .min(1, "Category is required")
     .max(50, "Category name is too long"),
-    
+
   description: z.preprocess(
     (val) => (val === null || val === "" ? undefined : val),
     z.string()
@@ -25,16 +30,16 @@ export const transactionSchema = z.object({
   ),
 });
 
-export const updateTransactionSchema = transactionSchema.partial().omit({ 
-  type: true, 
-  date: true 
+export const updateTransactionSchema = transactionSchema.partial().omit({
+  type: true,
+  date: true
 });
 
 export const getTransactionsQuerySchema = z.object({
-    type: z.enum(["income", "expense"]).optional(),
-    category: z.string().trim().min(1).optional()
+  type: z.enum(["income", "expense"]).optional(),
+  category: z.string().trim().min(1).optional()
 });
 
 export const idempotencyHeaderSchema = z.object({
-    idempotencyKey: z.string().trim().min(1)
+  idempotencyKey: z.string().trim().min(1)
 });
